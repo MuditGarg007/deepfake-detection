@@ -1,0 +1,7 @@
+# Taste
+- Prefers detailed, actionable roadmap/plan documents (task checklists with done-conditions, verification steps, and handoff criteria) written into the `docs/` folder before implementation begins. Confidence: 0.8
+- Expects folder-structure diagrams and path references in docs to mirror the actual repository layout — when real directories are created/renamed (e.g., `backend/`, `frontend/`, `machine-learning/`), wants planning docs updated to match rather than keeping an invented structure. Confidence: 0.4
+- For academic/college projects, explicitly keeps scope simple: explicitly excludes production-grade tooling (no Alembic migrations, Docker, auth, async jobs) and reuses existing setup (same venv, in-process model import) over adding moving parts. Confidence: 0.8
+- When writing a new planning doc, mirrors the structure and style of an existing doc of the same kind (same heading levels, checklists, tables, handoff section) so all project docs stay consistent. Confidence: 0.7
+- Prefers implementing in defined, scoped increments (e.g., completing a specific roadmap range such as "T0–T2") and pausing at dependency/credential boundaries to request what the user will provide (e.g., a DB connection string) rather than guessing. Confidence: 0.4
+- Verifies work with real runtime checks before marking a task done — imports the module, boots the server, hits endpoints like `/health`, inspects startup logs, then kills the test server — and updates the roadmap checklist (`- [x]`) to reflect completion. Confidence: 0.6
