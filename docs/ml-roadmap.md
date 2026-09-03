@@ -19,10 +19,13 @@
 - Audio, multimodal, temporal transformers, adversarial training (plan final scope).
 
 ### Exit criteria (definition of done for Phase 1)
-- [ ] Checkpoint exists for **both** models, each with a `config.json` and metrics report.
-- [ ] Test-set ROC-AUC **≥ 0.90** on FF++ c23 (target; see §7 verification).
-- [ ] `inference.py` exposes `load_model(name)` + `predict(crop) → probability` and passes a smoke test.
-- [ ] `machine-learning/runs/comparison.md` compares both models (Accuracy / F1 / AUC table).
+- [x] Checkpoint exists for **both** models, each with a `config.json` and metrics report.
+- [x] Test-set ROC-AUC **≥ 0.90** on FF++ c23 — EfficientNet-B0 **0.9989**, Xception **0.9990**.
+- [x] `inference.py` exposes `load_model(name)` + `predict(crop) → probability` and passes a smoke test.
+- [x] `machine-learning/runs/comparison.md` compares both models (Accuracy / F1 / AUC table).
+
+**Phase 1 is complete.** Recommended checkpoint for Phase 2:
+`machine-learning/checkpoints/efficientnet_b0_20260901_204509`.
 
 ---
 
@@ -43,12 +46,14 @@
 ### 3.1 Project structure (created as you go)
 
 ```text
-dbms-project/
+deepfake-detection/
+├── .venv/                     # gitignored — shared by backend and ML
 ├── data/                      # gitignored — raw + processed data
 │   ├── raw/
-│   │   ├── original_sequences/       # FF++ real videos
-│   │   └── manipulated_sequences/    # FF++ DeepFakes videos
+│   │   ├── Real/                     # FF++ c23 real videos
+│   │   └── Deepfakes/                # FF++ c23 DeepFakes videos
 │   └── processed/                    # face-crop JPEGs
+│       ├── manifest.csv
 │       ├── train/{real,fake}/
 │       ├── val/{real,fake}/
 │       └── test/{real,fake}/
@@ -61,6 +66,7 @@ dbms-project/
 │
 ├── machine-learning/          # everything ML lives here (Phase 1)
 │   ├── requirements.txt
+│   ├── download_data.py       # T2: fetch FF++ c23 videos
 │   ├── preprocessing.py       # T3: frame extraction + face crops
 │   ├── dataset.py             # T4: Dataset + augmentations
 │   ├── models.py              # T5: EfficientNet-B0 / Xception builders
@@ -69,7 +75,7 @@ dbms-project/
 │   ├── inference.py           # T8: load_model + predict
 │   ├── compare.py             # T9: model comparison
 │   ├── checkpoints/           # gitignored — .pth + config.json per run
-│   ├── runs/                  # gitignored — logs, plots, metrics.json
+│   ├── runs/                  # gitignored except comparison.md
 │   └── README.md              # T10: reproduction steps
 │
 ├── docs/
@@ -80,39 +86,45 @@ dbms-project/
 
 ### 3.2 Virtual environment
 
+One virtualenv at the repo root is shared by the backend and the ML code.
+Python **3.12** — torch has no 3.13/3.14 wheels yet.
+
 ```bash
-cd "C:\Users\Mudit Garg\Desktop\dbms-project"
-python -m venv .venv
-.venv\Scripts\activate          # Windows
+cd ~/deepfake-detection
+uv venv --python 3.12 .venv      # or: python3.12 -m venv .venv
 ```
 
 ### 3.3 `machine-learning/requirements.txt`
 
 ```text
-torch>=2.1
-torchvision>=0.16
-opencv-python>=4.8
-facenet-pytorch>=2.5            # MTCNN face detection
-timm>=0.9                        # efficientnet_b0, xception
+torch>=2.6
+torchvision>=0.21
+timm>=1.0.9                     # efficientnet_b0, legacy_xception
+opencv-python-headless>=4.8
+requests>=2.31
 scikit-learn>=1.3
 matplotlib>=3.8
 seaborn>=0.13
 pandas>=2.0
-numpy>=1.24
+numpy>=1.26
 Pillow>=10.0
 tqdm>=4.66
+huggingface-hub>=0.26
 ```
 
 Install:
 
 ```bash
-pip install -r machine-learning/requirements.txt
+.venv/bin/python -m pip install -r machine-learning/requirements.txt
+# facenet-pytorch (MTCNN) pins torchvision<0.18 in its metadata, which conflicts
+# with the CUDA-12/13 torch wheels; its code runs fine on current torchvision.
+.venv/bin/python -m pip install --no-deps 'facenet-pytorch>=2.6'
 ```
 
 ### 3.4 GPU sanity check
 
 ```bash
-python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+.venv/bin/python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
 
 Expect: `2.x True <GPU name>`. If `False`, stop here — fix the CUDA torch install before proceeding.
@@ -123,19 +135,19 @@ Expect: `2.x True <GPU name>`. If `False`, stop here — fix the CUDA torch inst
 
 Progress tracker — check boxes off as each task completes.
 
-- [ ] **T0 — Repo hygiene**: create `.gitignore`
-- [ ] **T1 — Environment**: deps installed, GPU + AMP verified
-- [ ] **T2 — Dataset**: FF++ downloaded **or** fallback decision recorded
-- [ ] **T3 — Preprocessing**: `data/processed/` + `manifest.csv` built
-- [ ] **T4 — Dataset loader**: augmentations working
-- [ ] **T5 — Model builders**: both models instantiate, forward pass OK
-- [ ] **T6 — Train**: EfficientNet-B0 trained → checkpoint + config
-- [ ] **T7 — Evaluate**: EfficientNet-B0 metrics + plots
-- [ ] **T6b — Train**: Xception trained → checkpoint + config
-- [ ] **T7b — Evaluate**: Xception metrics + plots
-- [ ] **T8 — Inference**: `predict()` smoke test passes
-- [ ] **T9 — Compare**: `machine-learning/runs/comparison.md` written
-- [ ] **T10 — Docs**: `machine-learning/README.md` written, this checklist finalized
+- [x] **T0 — Repo hygiene**: `.gitignore` covers `data/`, `checkpoints/`, `runs/` (keeps `runs/comparison.md`)
+- [x] **T1 — Environment**: torch 2.13.0+cu130, CUDA available on an RTX 4060 Laptop GPU, AMP verified
+- [x] **T2 — Dataset**: FF++ c23 pulled from the public HF mirror — 1,000 real + 1,000 Deepfakes videos
+- [x] **T3 — Preprocessing**: 99,586 crops, 0.17 % frames skipped, splits 69,767 / 14,887 / 14,932
+- [x] **T4 — Dataset loader**: `FaceDataset` + augmentations feed training without error
+- [x] **T5 — Model builders**: EfficientNet-B0 (4.17 M params) and Xception (21.07 M) forward + backward OK
+- [x] **T6 — Train**: EfficientNet-B0 — best epoch 8, val AUC 0.9991, early stop at 13, 24 min
+- [x] **T7 — Evaluate**: EfficientNet-B0 — test acc 0.9912, F1 0.9912, AUC 0.9989, 2.76 ms/img
+- [x] **T6b — Train**: Xception — best epoch 6, val AUC 0.9988, early stop at 11, 42 min
+- [x] **T7b — Evaluate**: Xception — test acc 0.9858, F1 0.9857, AUC 0.9990, 2.08 ms/img
+- [x] **T8 — Inference**: smoke test passes — real crops mean 0.0099, fake crops mean 0.9862
+- [x] **T9 — Compare**: `machine-learning/runs/comparison.md` written; EfficientNet-B0 recommended
+- [x] **T10 — Docs**: `machine-learning/README.md` written with results, this checklist finalized
 
 ---
 
@@ -197,7 +209,27 @@ data/raw/manipulated_sequences/deepfakes/c23/videos/*.mp4
 
 > **Decision gate ⚠️**: If the FF++ access request is slow/denied or you hit storage limits, **switch to a Kaggle pre-cropped faces dataset** (e.g. "140k Real and Fake Faces"). The preprocessing step T3 is then *skipped or reduced to resize-only* — crops are already 224×224. **Record the choice** in `machine-learning/README.md` under "Dataset used".
 
-**Done when**: videos organized under `data/raw/`, real and fake clearly separated, count logged.
+#### ✅ Decision taken — public FF++ mirror, no fallback needed
+
+The official download needs a signed request form, so `machine-learning/download_data.py`
+pulls the same c23 videos from the public Hugging Face mirror
+[`bitmind/FaceForensicsC23`](https://huggingface.co/datasets/bitmind/FaceForensicsC23).
+This keeps the **real video → face crop** pipeline of T3 intact, which the Kaggle
+pre-cropped fallback would have thrown away — and video-level data is what Phase 2
+needs to mirror at inference time.
+
+The archive lays the classes out as `FaceForensics++_C23/real/*.mp4` and
+`FaceForensics++_C23/fake/<method>/*.mp4`; only `real` and `fake/Deepfakes` are
+extracted, giving the full **1,000 real + 1,000 fake** set (not the suggested 500+500):
+
+```text
+data/raw/Real/000.mp4 …             1,000 videos, 1.9 GB
+data/raw/Deepfakes/000_003.mp4 …    1,000 videos, 1.9 GB
+```
+
+The ~18 GB archive is deleted after extraction.
+
+**Done when**: videos organized under `data/raw/`, real and fake clearly separated, count logged. ✅
 
 ---
 
@@ -207,7 +239,7 @@ Creates the face-crop dataset once, on disk. Training later reads JPEGs directly
 
 Pipeline per video (matches plan §5):
 
-1. **Split first at the video level** — 70/15/15 (train/val/test) by video path (NOT by frame). Prevents frame leakage between splits. Record in `manifest.csv`.
+1. **Split first at the identity level** — 70/15/15 (train/val/test) by FF++ source identity, NOT by frame and not even by video. A real clip `033.mp4` and the fake made from it, `033_097.mp4`, share identity `033`, so a per-video split would put the same face in both train and test and inflate the test scores. Record in `manifest.csv`.
 2. **Extract frames** at **5 fps** (plan §5), cap at **50 frames/video** (uniform sampling if longer). Use `cv2.VideoCapture`.
 3. **Detect faces** with **MTCNN** (`facenet-pytorch`):
    - Confidence **≥ 0.95**; if multiple faces, take the largest.
@@ -385,10 +417,43 @@ If val AUC < 0.85: check class balance, face-crop quality, frame sampling; incre
 
 Phase 2 (video processing) receives:
 
-- **Checkpoint path**: `machine-learning/checkpoints/<best_model>/best.pth` + `config.json`
+- **Checkpoint path**: `machine-learning/checkpoints/efficientnet_b0_20260901_204509/`
+  (`best.pth` + `config.json`) — set `MODEL_DIR` in `backend/.env` to this directory
 - **API**: `inference.load_model()` / `inference.predict()` → per-frame fake probability
 - **Aggregation**: mean of frame probabilities → video score; risk thresholds from plan §6 (`< 40%` Real, `40–70%` Suspicious, `> 70%` High Risk) tuned on the test set via `thresholds.csv`
 - **Suspicious timestamps** (Phase 3) reuse the per-frame probabilities directly.
+
+`predict` accepts a path, a PIL image, an RGB `numpy` array, or a list of any of
+those — the list form scores a whole video's crops in one GPU batch, which is
+much faster than calling it per frame.
+
+Point `MODEL_DIR` in `backend/.env` at a specific run directory. If it is left
+at its default (`machine-learning/checkpoints`, the parent), the detector loads
+the most recently written run — convenient, but that is whichever model trained
+last, not necessarily the recommended one.
+
+**Seam verified end to end** with the trained EfficientNet-B0 checkpoint, on two
+held-out test videos the model never saw:
+
+| Video | Label | `fake_probability` | Status | Suspicious window |
+|---|---|---|---|---|
+| `006.mp4` | real | 0.0000 | REAL | — |
+| `006_002.mp4` | fake | 0.9732 | HIGH_RISK | 0.0 – 8.4 s |
+
+Four backend-side defects on this seam were found and fixed while wiring it up:
+
+1. `detector.predict()` called `inference.predict(...)`, but `inference` was
+   imported inside `load_model()` — `NameError` on the first real frame. The
+   module object is now kept in `detector.INFERENCE`.
+2. `video_processor.py` did `from .config import settings`; `config.py` is at
+   `backend/config.py`, one level up — `ModuleNotFoundError` on import.
+3. `SAMPLE_FPS = 5` was unused: frames were sampled uniformly across the whole
+   video instead of at 5 fps, so a long video was scored on frames spaced very
+   differently from the training crops. Now uses the same two-stage
+   fps-then-cap sampling as `preprocessing.py`.
+4. Face selection took the *highest-confidence* box, while the training crops
+   were built from the *largest* box above confidence 0.95. Now matched, and
+   frames whose best detection is below 0.95 are skipped rather than scored.
 
 ---
 

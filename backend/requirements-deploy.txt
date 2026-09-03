@@ -1,0 +1,31 @@
+# Deployment dependencies (Hugging Face Space, Dockerfile at the repo root).
+#
+# Separate from requirements.txt because deployment needs the CPU-only torch
+# wheels: the default PyPI wheels bundle CUDA and pull ~2.5 GB of nvidia-*
+# packages that a CPU Space can never use.
+#
+# facenet-pytorch is NOT listed here. Its metadata pins torchvision<0.18, which
+# conflicts with the wheels below, so the Dockerfile installs it with --no-deps
+# (same workaround as machine-learning/requirements.txt).
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch==2.6.0+cpu
+torchvision==0.21.0+cpu
+timm>=1.0.9
+requests>=2.31          # runtime dependency of facenet-pytorch
+opencv-python-headless>=4.8
+numpy>=1.26
+Pillow>=10.0
+# Not used at inference time, but machine-learning/dataset.py imports it at
+# module level and inference.py pulls build_transform from there. Without it
+# the detector silently falls back to stub mode (every frame scored 0.5).
+pandas>=2.0
+
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+SQLAlchemy>=2.0
+psycopg2-binary>=2.9
+pydantic-settings>=2.1
+python-dotenv>=1.0

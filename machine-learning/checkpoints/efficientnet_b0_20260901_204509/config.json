@@ -1,0 +1,58 @@
+{
+  "model": "efficientnet_b0",
+  "timm_name": "efficientnet_b0",
+  "run_name": "efficientnet_b0_20260901_204509",
+  "args": {
+    "model": "efficientnet_b0",
+    "data": "data/processed",
+    "epochs": 15,
+    "batch_size": 64,
+    "lr": 0.0001,
+    "weight_decay": 1e-05,
+    "patience": 5,
+    "clip": 1.0,
+    "num_workers": 8,
+    "seed": 42,
+    "device": "cuda",
+    "amp": true,
+    "out": "/home/mudit/deepfake-detection/machine-learning"
+  },
+  "image_size": 224,
+  "normalization": {
+    "mean": [
+      0.485,
+      0.456,
+      0.406
+    ],
+    "std": [
+      0.229,
+      0.224,
+      0.225
+    ]
+  },
+  "class_mapping": {
+    "real": 0,
+    "fake": 1
+  },
+  "split_counts": {
+    "train": {
+      "real": 34934,
+      "fake": 34833
+    },
+    "val": {
+      "real": 7459,
+      "fake": 7428
+    }
+  },
+  "pos_weight": 1.0028995275497437,
+  "best_epoch": 8,
+  "best_val": {
+    "loss": 0.05586621140467259,
+    "acc": 0.9862967689930812,
+    "auc": 0.9990904956429197
+  },
+  "train_seconds": 1421.9,
+  "device": "cuda",
+  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "amp": true
+}

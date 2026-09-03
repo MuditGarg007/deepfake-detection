@@ -20,10 +20,10 @@
 - Frontend → Phase 5.
 
 ### Exit criteria (definition of done for Phase 4)
-- [ ] Server boots from the root `.venv`, loads the model checkpoint, and serves Swagger at `/docs`.
-- [ ] Upload → detect → store in Neon → return result works end-to-end for a real and a fake sample.
-- [ ] `GET /analysis/{id}` and `GET /history` return the stored results.
-- [ ] Smoke test passes (T9), `backend/README.md` written (T10).
+- [x] Server boots from the root `.venv`, loads the model checkpoint, and serves Swagger at `/docs`.
+- [x] Upload → detect → store in Postgres → return result works end-to-end for a real and a fake sample.
+- [x] `GET /analysis/{id}` and `GET /history` return the stored results.
+- [x] Smoke test passes (T9), `backend/README.md` written (T10).
 
 ---
 
@@ -57,6 +57,8 @@ dbms-project/
 │   │   ├── detector.py       # wraps machine-learning/inference.py (load_model, predict)
 │   │   └── video_processor.py# frames → crops → per-frame probs → aggregate
 │   ├── uploads/              # gitignored — uploaded videos
+│   ├── smoke_test.py         # T9 — drives every endpoint
+│   ├── .env.example          # template for backend/.env
 │   ├── requirements.txt
 │   └── README.md             # T10
 │
@@ -86,6 +88,8 @@ pip install -r backend/requirements.txt
 
 ```text
 fastapi>=0.110
+facenet-pytorch>=2.5
+opencv-python>=4.8
 uvicorn[standard]>=0.29
 python-multipart>=0.0.9
 SQLAlchemy>=2.0
@@ -103,14 +107,22 @@ No Alembic, no docker, no async DB driver — keep it simple.
 3. Create `backend/.env`:
 
 ```bash
-DATABASE_URL=postgresql+psycopg2://USER:PASSWORD@HOST/db?sslmode=require
-MODEL_DIR=../machine-learning/checkpoints/efficientnet_b0_<ts>/
+NEON_DB_URL=postgresql+psycopg2://USER:PASSWORD@HOST/db?sslmode=require
+MODEL_DIR=machine-learning/checkpoints/efficientnet_b0_20260901_204509
 UPLOAD_DIR=uploads
 RISK_SUSPICIOUS=0.4
 RISK_HIGH=0.7
 FRAME_THRESHOLD=0.7
 MAX_UPLOAD_MB=200
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 ```
+
+`backend/.env.example` holds this template. `DATABASE_URL` is accepted as an
+alias for `NEON_DB_URL`; `MODEL_DIR` is relative to the project root. When
+`NEON_DB_URL` is unset the server falls back to a local SQLite file
+(`backend/app.db`, gitignored) so a fresh clone boots without credentials —
+Postgres is what Phase 4 is verified against, the fallback only keeps the
+frontend and the smoke test runnable.
 
 Add to `.gitignore`:
 
@@ -131,11 +143,11 @@ Progress tracker — check boxes off as each task completes.
 - [x] **T3 — Config + DB plumbing**: tables auto-created at startup
 - [x] **T4 — Schema**: `Analysis` model + Pydantic schemas
 - [x] **T5 — Detector service**: checkpoint loads at startup, `predict()` returns 0–1
-- [ ] **T6 — Video processing**: per-frame probs → mean score → risk status → suspicious region
-- [ ] **T7 — Routes**: all 3 endpoints wired in `main.py` with CORS
-- [ ] **T8 — Validation & errors**: extension/size/empty-video cases
-- [ ] **T9 — Smoke test**: real + fake samples through every endpoint
-- [ ] **T10 — Docs**: `backend/README.md` written, checklist finalized
+- [x] **T6 — Video processing**: 5 fps sampling → largest face ≥ 0.95 conf → one batched forward pass → mean score → risk status → suspicious region
+- [x] **T7 — Routes**: `POST /analyze`, `GET /analysis/{id}`, `GET /history`, `GET /health`, CORS for `localhost:3000`
+- [x] **T8 — Validation & errors**: 400 bad extension / empty, 413 oversized, 422 unreadable or faceless, 404 unknown id
+- [x] **T9 — Smoke test**: `backend/smoke_test.py` — 22/22 checks pass on Postgres 16 and on the SQLite fallback, with the EfficientNet-B0 checkpoint
+- [x] **T10 — Docs**: `backend/README.md` written, checklist finalized
 
 ---
 
@@ -350,6 +362,45 @@ curl http://localhost:8000/history
 | Stub mode | Server runs without a checkpoint, `predict()` returns 0.5 |
 
 If a fake sample comes back REAL: check the checkpoint path in `.env`, face-crop quality, and whether frame extraction is actually sampling the video.
+
+---
+
+## 5b. Verification results (T9)
+
+Run: `uvicorn backend.main:app --port 8000` with
+`MODEL_DIR=machine-learning/checkpoints/efficientnet_b0_20260901_204509`
+(the model `machine-learning/runs/comparison.md` recommends) against Postgres 16,
+then `python backend/smoke_test.py` — **22/22 checks passed**, and again on the
+SQLite fallback with the same results.
+
+| Sample | Label | `fake_probability` | `status` | Suspicious window | Frames scored |
+|---|---|---|---|---|---|
+| `data/raw/Real/006.mp4` | real | 0.0000 | `REAL` | — | 52 |
+| `data/raw/Deepfakes/006_002.mp4` | fake | 0.9733 | `HIGH_RISK` | 0.0 – 10.2 s | 52 |
+
+No Neon project was provisioned for this run, so Postgres 16 was run locally in
+Docker (`postgres:16-alpine`, port 55432) — the same psycopg2 driver and schema
+Neon serves; switching to Neon is a one-line `.env` change.
+
+Both videos are held-out test videos the model never trained on. `GET
+/analysis/{id}` returned the upload response byte for byte, `/history` listed
+both rows newest first, and the rows landed in Postgres with `frame_scores` as
+`JSONB` and `created_at` as `TIMESTAMPTZ`.
+
+Error cases, all confirmed to return the intended status rather than a 500:
+`.txt` upload → 400, empty file → 400, 201 MB file → 413 (rejected mid-stream,
+never buffered whole), 4 KB of garbage named `.mp4` → 422, a readable
+face-free noise clip → 422, `GET /analysis/999999` → 404.
+
+Two changes made while finishing the phase:
+
+1. `video_processor` scored crops one at a time; `inference.predict` accepts a
+   list, so the crops for a whole video now go through in a single batched
+   forward pass (`detector.predict_batch`).
+2. The pipeline raised bare `ValueError` for both "unreadable video" and "no
+   faces", which the route could not tell apart from a genuine bug. They are
+   now `UnreadableVideoError` / `NoFacesError` (both `VideoProcessingError`),
+   mapped to 422, with anything else logged and returned as 500.
 
 ---
 
