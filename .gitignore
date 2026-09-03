@@ -6,3 +6,26 @@ __pycache__/
 # Backend runtime
 backend/.env
 backend/uploads/
+
+# ML data + artifacts
+data/
+# `checkpoints/*` (not `checkpoints/`) so git still descends into the directory
+# and can un-ignore the served run below.
+machine-learning/checkpoints/*
+# ...but the checkpoint the deployed backend loads ships with the repo, since
+# Hugging Face builds the Space from git. Tracked with LFS (see .gitattributes).
+!machine-learning/checkpoints/efficientnet_b0_20260901_204509/
+# Note: `runs/*` (not `runs/`) so git still descends into the directory and
+# can un-ignore the file below.
+machine-learning/runs/*
+# ...but the model-comparison report is a deliverable, keep it tracked.
+!machine-learning/runs/comparison.md
+*.log
+
+# SQLite fallback used when NEON_DB_URL is unset
+backend/app.db
+
+# Next.js frontend
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local

@@ -5,8 +5,9 @@ Mirrors Phase 2/3 of docs/plan.md:
 1. Extract frames at ~5 fps with cv2, capped at ~100 frames (uniform sample if longer).
 2. Detect faces per frame with MTCNN (same approach as Phase 1 preprocessing);
    frames with no face are skipped.
-3. Crop the highest-confidence face, resize to 224x224 with a ~20 px margin
-   (matching training) — ``detector.predict`` applies the final normalization.
+3. Crop the largest face detected above ``FACE_CONF`` with a ~20 px margin, the
+   same selection rule Phase 1 preprocessing used to build the training crops.
+   ``detector.predict`` applies the resize to 224x224 and the normalization.
 4. Score each crop -> list of ``{timestamp, fake_probability}``.
 5. Aggregate: video ``fake_probability`` = mean of frame probs.
 6. Risk status: < 0.4 -> REAL, 0.4-0.7 -> SUSPICIOUS, > 0.7 -> HIGH_RISK.
@@ -23,15 +24,28 @@ from pathlib import Path
 
 import cv2
 
+from ..config import settings
 from . import detector
-from .config import settings
 
 logger = logging.getLogger(__name__)
 
+class VideoProcessingError(Exception):
+    """Base class for videos the pipeline cannot produce a result for."""
+
+
+class UnreadableVideoError(VideoProcessingError):
+    """The file is not a readable video (no frames, no fps)."""
+
+
+class NoFacesError(VideoProcessingError):
+    """The video is readable but contains no detectable face."""
+
+
 SAMPLE_FPS = 5
 MAX_FRAMES = 100
-CROP_SIZE = 224
 FACE_MARGIN = 20
+# Minimum MTCNN confidence, matching preprocessing.py's --conf default.
+FACE_CONF = 0.95
 MIN_RUN_FRAMES = 3
 
 # Lazy-loaded MTCNN so the module imports without torch/facenet present.
@@ -47,11 +61,18 @@ def _get_mtcnn():
     return _mtcnn
 
 
-def _uniform_sample(total_frames: int, cap: int) -> list[int]:
-    """Return up to ``cap`` frame indices spread uniformly across the video."""
-    if total_frames <= cap:
-        return list(range(total_frames))
-    return [round(i * (total_frames - 1) / (cap - 1)) for i in range(cap)]
+def _sample_indices(total_frames: int, src_fps: float, cap: int) -> list[int]:
+    """Frame indices at ``SAMPLE_FPS``, uniformly thinned to at most ``cap``.
+
+    Same two-stage sampling as Phase 1 preprocessing, so the frames scored here
+    are drawn the same way as the frames the model was trained on.
+    """
+    step = max(1, round(src_fps / SAMPLE_FPS)) if src_fps > 0 else 1
+    indices = list(range(0, total_frames, step))
+    if len(indices) > cap:
+        picks = [round(i * (len(indices) - 1) / (cap - 1)) for i in range(cap)]
+        indices = [indices[p] for p in dict.fromkeys(picks)]
+    return indices
 
 
 def _extract_frames(path: Path) -> list[tuple[float, object]]:
@@ -61,11 +82,11 @@ def _extract_frames(path: Path) -> list[tuple[float, object]]:
         total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         fps = cap.get(cv2.CAP_PROP_FPS)
         if total <= 0 or fps <= 0:
-            raise ValueError("could not read frame count or fps from video")
+            raise UnreadableVideoError("could not read frame count or fps from video")
     finally:
         cap.release()
 
-    sampled = _uniform_sample(total, MAX_FRAMES)
+    sampled = _sample_indices(total, fps, MAX_FRAMES)
     frames: list[tuple[float, object]] = []
     cap = cv2.VideoCapture(str(path))
     try:
@@ -77,6 +98,18 @@ def _extract_frames(path: Path) -> list[tuple[float, object]]:
     finally:
         cap.release()
     return frames
+
+
+def _largest_face(boxes, probs) -> int | None:
+    """Index of the largest box among detections above ``FACE_CONF``, or None.
+
+    Phase 1 built the training crops this way; picking by confidence instead
+    would feed the model differently sized faces than it was trained on.
+    """
+    keep = [i for i, p in enumerate(probs) if p is not None and p >= FACE_CONF]
+    if not keep:
+        return None
+    return max(keep, key=lambda i: (boxes[i][2] - boxes[i][0]) * (boxes[i][3] - boxes[i][1]))
 
 
 def _crop_face(frame, box: tuple[float, float, float, float]) -> object:
@@ -136,23 +169,32 @@ def process_video(path: Path, filename: str | None = None) -> VideoResult:
     """Run the full pipeline on a video file and return the aggregated result."""
     frames = _extract_frames(path)
     if not frames:
-        raise ValueError("video contains no readable frames")
+        raise UnreadableVideoError("video contains no readable frames")
 
     mtcnn = _get_mtcnn()
-    scores: list[FrameScore] = []
+    timestamps: list[float] = []
+    crops: list[object] = []
     for timestamp, frame in frames:
-        bgr = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        boxes, probs = mtcnn.detect(bgr)
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        boxes, probs = mtcnn.detect(rgb)
         if boxes is None or len(boxes) == 0:
             continue
-        # Highest-confidence face, first if ties.
-        best = max(range(len(boxes)), key=lambda i: probs[i])
-        crop = _crop_face(bgr, boxes[best])
-        prob = detector.predict(crop)
-        scores.append(FrameScore(timestamp=timestamp, fake_probability=prob))
+        best = _largest_face(boxes, probs)
+        if best is None:
+            continue
+        timestamps.append(timestamp)
+        crops.append(_crop_face(rgb, boxes[best]))
 
-    if not scores:
-        raise ValueError("no faces detected in any frame")
+    if not crops:
+        raise NoFacesError("no faces detected in any frame")
+
+    # One batched call instead of one per frame - inference.predict accepts a
+    # list and scores it in a single forward pass.
+    probabilities = detector.predict_batch(crops)
+    scores = [
+        FrameScore(timestamp=t, fake_probability=round(p, 4))
+        for t, p in zip(timestamps, probabilities)
+    ]
 
     fake_probability = sum(s.fake_probability for s in scores) / len(scores)
     start, end = _suspicious_region(scores)

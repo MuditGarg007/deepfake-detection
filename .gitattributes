@@ -1,0 +1,4 @@
+# Hugging Face rejects non-LFS files over 10 MB, and the Space is built from
+# git, so the served checkpoint has to go through LFS.
+# Requires git-lfs locally: `sudo pacman -S git-lfs && git lfs install`.
+machine-learning/checkpoints/**/*.pth filter=lfs diff=lfs merge=lfs -text
