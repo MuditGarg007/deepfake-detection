@@ -38,6 +38,8 @@ ENV PYTHONUNBUFFERED=1 \
     UPLOAD_DIR=/home/user/app/uploads \
     MODEL_DIR=machine-learning/checkpoints/efficientnet_b0_20260901_204509
 
-# 7860 is the Space default, matched by app_port in README.md's front matter.
+# Cloud Run injects PORT (8080); 7860 is the default elsewhere. Shell form so
+# the variable is expanded at runtime, and exec so uvicorn stays PID 1 and
+# receives the platform's SIGTERM on shutdown.
 EXPOSE 7860
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["sh", "-c", "exec uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-7860}"]
