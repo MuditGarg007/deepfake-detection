@@ -40,11 +40,14 @@ Copy `backend/.env.example` to `backend/.env` and fill it in:
 | `MAX_UPLOAD_MB` | `200` | Uploads larger than this are rejected with 413. |
 | `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated origins allowed by CORS (Phase 5 frontend). |
 
-For Neon: create a free project at [neon.tech](https://neon.tech), copy the
-connection string, and prefix the driver —
-`postgresql+psycopg2://USER:PASSWORD@HOST/dbname?sslmode=require`.
+For Neon: create a free project at [neon.tech](https://neon.tech) and copy the
+connection string —
+`postgresql://USER:PASSWORD@HOST/dbname?sslmode=require`. A
+`postgresql+psycopg2://` string also works; the dialect suffix is stripped.
 
-Tables are created automatically on startup; there are no migrations.
+The table is created automatically on startup; there are no migrations. All
+database access is hand-written SQL executed through sqlite3 or psycopg2 —
+there is no ORM.
 
 ### 1.3 Run
 
@@ -169,8 +172,9 @@ pipeline accepts it.
 5. Aggregate to the mean, derive the status and the suspicious region, persist.
 
 The stored table (`analyses`) is the schema in
-[`docs/backend-roadmap.md`](../docs/backend-roadmap.md) T4: `frame_scores` is
-`JSONB` on Postgres, plain `JSON` on the SQLite fallback.
+[`docs/backend-roadmap.md`](../docs/backend-roadmap.md) T4, created by the DDL
+in `backend/database.py`: `frame_scores` is `JSONB` on Postgres, plain `JSON`
+on the SQLite fallback.
 
 ---
 

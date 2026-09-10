@@ -8,11 +8,10 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..database import get_db
-from ..models import Analysis
+from ..database import Db, get_db, to_json
+from ..models import ALL_COLUMNS, Analysis
 from ..schemas import AnalysisOut
 from ..services import video_processor
 from ..services.video_processor import NoFacesError, UnreadableVideoError
@@ -59,8 +58,17 @@ def _save_upload(upload: UploadFile) -> Path:
     return destination
 
 
+INSERT_ANALYSIS = f"""
+INSERT INTO analyses (
+    filename, storage_path, fake_probability, status,
+    suspicious_start, suspicious_end, frame_scores
+) VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING {ALL_COLUMNS}
+"""
+
+
 @router.post("/analyze", response_model=AnalysisOut, status_code=status.HTTP_201_CREATED)
-def analyze(file: UploadFile = File(...), db: Session = Depends(get_db)) -> Analysis:
+def analyze(file: UploadFile = File(...), db: Db = Depends(get_db)) -> Analysis:
     """Analyze an uploaded video and persist the result."""
     filename = file.filename or ""
     if Path(filename).suffix.lower() not in ALLOWED_EXTENSIONS:
@@ -85,20 +93,23 @@ def analyze(file: UploadFile = File(...), db: Session = Depends(get_db)) -> Anal
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="analysis failed"
         ) from exc
 
-    analysis = Analysis(
-        filename=result.filename,
-        # Kept so GET /analysis/{id}/video can play the clip back.
-        storage_path=str(path),
-        fake_probability=result.fake_probability,
-        status=result.status,
-        suspicious_start=result.suspicious_start,
-        suspicious_end=result.suspicious_end,
-        frame_scores=[
-            {"timestamp": s.timestamp, "fake_probability": s.fake_probability}
-            for s in result.frame_scores
-        ],
+    row = db.fetch_one(
+        INSERT_ANALYSIS,
+        (
+            result.filename,
+            # Kept so GET /analysis/{id}/video can play the clip back.
+            str(path),
+            result.fake_probability,
+            result.status,
+            result.suspicious_start,
+            result.suspicious_end,
+            to_json(
+                [
+                    {"timestamp": s.timestamp, "fake_probability": s.fake_probability}
+                    for s in result.frame_scores
+                ]
+            ),
+        ),
     )
-    db.add(analysis)
-    db.commit()
-    db.refresh(analysis)
-    return analysis
+    assert row is not None  # RETURNING always yields the inserted row
+    return Analysis.from_row(row)

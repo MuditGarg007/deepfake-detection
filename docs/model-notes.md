@@ -298,10 +298,13 @@ between the API and the model. The web UI is a separate Next.js app (port
   to load), `UPLOAD_DIR`, risk cutoffs `RISK_SUSPICIOUS = 0.4` and
   `RISK_HIGH = 0.7`, `FRAME_THRESHOLD = 0.7`, `MAX_UPLOAD_MB = 200`,
   `CORS_ORIGINS`.
-- `backend/models.py` + `backend/database.py` — SQLAlchemy 2.0. One table,
-  `analyses`: id, filename, storage_path, fake_probability, status,
-  suspicious_start/end, frame_scores (JSON), created_at. Schema upgrades are
-  handled by a lightweight auto-ALTER helper (no Alembic).
+- `backend/models.py` + `backend/database.py` — raw SQL over sqlite3 or
+  psycopg2; there is no ORM. `database.py` owns the DDL, connections and the
+  `Db` execute/fetch helper; `models.py` is the `Analysis` dataclass the rows
+  are read into. One table, `analyses`: id, filename, storage_path,
+  fake_probability, status, suspicious_start/end, frame_scores (JSON),
+  created_at. Schema upgrades are handled by a lightweight auto-ALTER helper
+  (no Alembic).
 - `backend/services/detector.py` — thin wrapper around the ML inference API
   (adds `machine-learning/` to `sys.path` and imports `inference`).
 - `backend/services/video_processor.py` — the video → verdict pipeline.

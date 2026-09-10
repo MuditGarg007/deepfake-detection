@@ -1,40 +1,55 @@
-"""SQLAlchemy models."""
+"""Row types for the analyses table — plain dataclasses, no ORM."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Mapping
 
-from sqlalchemy import JSON, TIMESTAMP, CheckConstraint, Float, Integer, Text, func
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from .database import from_json
 
-from .database import Base
+# Every column, in table order. History reads a narrower list (no frame_scores)
+# because that column is the large one and the list view does not show it.
+ALL_COLUMNS = (
+    "id, filename, storage_path, fake_probability, status, "
+    "suspicious_start, suspicious_end, frame_scores, created_at"
+)
+HISTORY_COLUMNS = "id, filename, storage_path, fake_probability, status, created_at"
 
 
-class Analysis(Base):
-    __tablename__ = "analyses"
-    __table_args__ = (
-        CheckConstraint(
-            "status IN ('REAL','SUSPICIOUS','HIGH_RISK')", name="ck_analyses_status"
-        ),
-    )
+@dataclass(slots=True)
+class Analysis:
+    """One analyses row. Fields the query did not select keep their default."""
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    filename: Mapped[str] = mapped_column(Text, nullable=False)
-    # Where the uploaded file was kept so it can be played back later. Nullable:
-    # rows written before playback existed have no path, and a file can be
-    # cleaned off disk without invalidating the analysis.
-    storage_path: Mapped[str | None] = mapped_column(Text, nullable=True)
-    fake_probability: Mapped[float] = mapped_column(Float, nullable=False)
-    status: Mapped[str] = mapped_column(Text, nullable=False)
-    suspicious_start: Mapped[float | None] = mapped_column(Float, nullable=True)
-    suspicious_end: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # JSONB on Postgres (the roadmap's schema), plain JSON on the SQLite fallback.
-    frame_scores: Mapped[list] = mapped_column(
-        JSON().with_variant(JSONB, "postgresql"), nullable=False, default=list
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
-    )
+    id: int
+    filename: str
+    fake_probability: float
+    status: str
+    created_at: datetime
+    storage_path: str | None = None
+    suspicious_start: float | None = None
+    suspicious_end: float | None = None
+    frame_scores: list = field(default_factory=list)
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> "Analysis":
+        created_at = row["created_at"]
+        # SQLite has no date type — it hands back the stored text.
+        if isinstance(created_at, str):
+            created_at = datetime.fromisoformat(created_at)
+        frame_scores = row.get("frame_scores")
+        return cls(
+            id=row["id"],
+            filename=row["filename"],
+            fake_probability=row["fake_probability"],
+            status=row["status"],
+            created_at=created_at,
+            storage_path=row.get("storage_path"),
+            suspicious_start=row.get("suspicious_start"),
+            suspicious_end=row.get("suspicious_end"),
+            frame_scores=[] if frame_scores is None else from_json(frame_scores),
+        )
 
     @property
     def has_video(self) -> bool:
