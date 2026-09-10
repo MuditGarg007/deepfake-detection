@@ -25,7 +25,6 @@ pandas>=2.0
 fastapi>=0.110
 uvicorn[standard]>=0.29
 python-multipart>=0.0.9
-SQLAlchemy>=2.0
 psycopg2-binary>=2.9
 pydantic-settings>=2.1
 python-dotenv>=1.0

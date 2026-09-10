@@ -1,6 +1,6 @@
 """Phase 4 backend — FastAPI app.
 
-Lifespan creates the tables and loads the Phase 1 checkpoint; the routes live in
+Lifespan creates the table and loads the Phase 1 checkpoint; the routes live in
 ``backend/routes/``. See docs/backend-roadmap.md.
 """
 
@@ -10,9 +10,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import models  # noqa: F401  (register tables on Base)
 from .config import settings
-from .database import Base, engine, ensure_schema
+from .database import init_schema
 from .routes import analyze, history
 from .services import detector
 
@@ -21,8 +20,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
-    ensure_schema()
+    init_schema()
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
     detector.load_model(settings.MODEL_DIR)
     yield

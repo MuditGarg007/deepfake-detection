@@ -56,11 +56,14 @@ hold.
 ### 1. Database
 
 Create a free project at <https://neon.tech> and copy the connection string.
-Rewrite the scheme for SQLAlchemy's psycopg2 driver:
+It is passed to psycopg2 as-is:
 
 ```
-postgresql+psycopg2://USER:PASSWORD@HOST/dbname?sslmode=require
+postgresql://USER:PASSWORD@HOST/dbname?sslmode=require
 ```
+
+A `postgresql+psycopg2://` string is accepted too — the dialect suffix is
+stripped before the connection is opened.
 
 `backend/config.py` accepts it as either `NEON_DB_URL` or `DATABASE_URL`.
 

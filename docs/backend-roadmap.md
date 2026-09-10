@@ -47,8 +47,8 @@ dbms-project/
 ├── backend/                  # Phase 4 — this roadmap
 │   ├── main.py               # FastAPI app, CORS, startup: create tables + load model
 │   ├── config.py             # reads backend/.env (pydantic-settings)
-│   ├── database.py           # engine, SessionLocal, Base, get_db
-│   ├── models.py             # SQLAlchemy Analysis model
+│   ├── database.py           # DDL, connections, Db execute/fetch helper, get_db
+│   ├── models.py             # Analysis dataclass + column lists
 │   ├── schemas.py            # Pydantic request/response models
 │   ├── routes/
 │   │   ├── analyze.py        # POST /analyze
@@ -92,7 +92,6 @@ facenet-pytorch>=2.5
 opencv-python>=4.8
 uvicorn[standard]>=0.29
 python-multipart>=0.0.9
-SQLAlchemy>=2.0
 psycopg2-binary>=2.9
 pydantic-settings>=2.1
 python-dotenv>=1.0
@@ -201,8 +200,8 @@ print(conn.cursor().execute('SELECT 1').fetchall())
 ### T3 — Config + DB plumbing
 
 - `config.py` — pydantic-settings `Settings` class reading `backend/.env` (`DATABASE_URL`, `MODEL_DIR`, `UPLOAD_DIR`, thresholds, `MAX_UPLOAD_MB`).
-- `database.py` — `engine = create_engine(Settings().DATABASE_URL)`, `SessionLocal`, `Base`, and a `get_db()` dependency that yields a session.
-- In `main.py`, use the FastAPI lifespan to call `Base.metadata.create_all(engine)` on startup.
+- `database.py` — connects with sqlite3 or psycopg2 straight from `Settings().DATABASE_URL`, a `Db` helper that executes statements and returns dict rows, and a `get_db()` dependency that yields one connection per request. No ORM: every statement is written out as SQL.
+- In `main.py`, use the FastAPI lifespan to call `init_schema()` on startup.
 
 **Done when**: server boots and the `analyses` table appears in the Neon console (empty, but present).
 
@@ -210,7 +209,7 @@ print(conn.cursor().execute('SELECT 1').fetchall())
 
 ### T4 — Schema
 
-SQLAlchemy `Analysis` model (mirrors the plain SQL below):
+The table, created by `init_schema()` (the SQLite fallback uses the same shape with `INTEGER PRIMARY KEY AUTOINCREMENT`, `FLOAT` and `JSON`):
 
 ```sql
 CREATE TABLE analyses (
@@ -229,7 +228,7 @@ CREATE TABLE analyses (
 - `AnalysisOut` — the full result returned to the frontend: `id, filename, fake_probability, status, suspicious_start, suspicious_end, frame_scores, created_at`.
 - `HistoryOut` — `id, filename, fake_probability, status, created_at` (the history list row, plan §5).
 
-**Done when**: inserting a row via `SessionLocal` works and it shows up in Neon.
+**Done when**: an `INSERT` through `Db.execute` works and the row shows up in Neon.
 
 ---
 

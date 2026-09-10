@@ -4,12 +4,10 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..database import get_db
-from ..models import Analysis
+from ..database import Db, get_db
+from ..models import ALL_COLUMNS, HISTORY_COLUMNS, Analysis
 from ..schemas import AnalysisOut, HistoryOut
 
 # Browsers need a type they recognise; .avi is served but most will not play it.
@@ -21,29 +19,34 @@ MEDIA_TYPES = {
 
 router = APIRouter(tags=["analysis"])
 
+SELECT_BY_ID = f"SELECT {ALL_COLUMNS} FROM analyses WHERE id = ?"
+SELECT_HISTORY = (
+    f"SELECT {HISTORY_COLUMNS} FROM analyses ORDER BY created_at DESC, id DESC LIMIT ?"
+)
 
-@router.get("/analysis/{analysis_id}", response_model=AnalysisOut)
-def get_analysis(analysis_id: int, db: Session = Depends(get_db)) -> Analysis:
-    analysis = db.get(Analysis, analysis_id)
-    if analysis is None:
+
+def _load(db: Db, analysis_id: int) -> Analysis:
+    row = db.fetch_one(SELECT_BY_ID, (analysis_id,))
+    if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"analysis {analysis_id} not found"
         )
-    return analysis
+    return Analysis.from_row(row)
+
+
+@router.get("/analysis/{analysis_id}", response_model=AnalysisOut)
+def get_analysis(analysis_id: int, db: Db = Depends(get_db)) -> Analysis:
+    return _load(db, analysis_id)
 
 
 @router.get("/analysis/{analysis_id}/video", tags=["analysis"])
-def get_analysis_video(analysis_id: int, db: Session = Depends(get_db)) -> FileResponse:
+def get_analysis_video(analysis_id: int, db: Db = Depends(get_db)) -> FileResponse:
     """Stream back the video this analysis was run on, for playback in the UI.
 
     ``FileResponse`` answers Range requests, so the player can seek without
     pulling the whole clip first.
     """
-    analysis = db.get(Analysis, analysis_id)
-    if analysis is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"analysis {analysis_id} not found"
-        )
+    analysis = _load(db, analysis_id)
     if analysis.storage_path is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -69,8 +72,7 @@ def get_analysis_video(analysis_id: int, db: Session = Depends(get_db)) -> FileR
 
 @router.get("/history", response_model=list[HistoryOut])
 def history(
-    limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db)
+    limit: int = Query(100, ge=1, le=500), db: Db = Depends(get_db)
 ) -> list[Analysis]:
     """Most recent analyses first (plan §5 history table)."""
-    statement = select(Analysis).order_by(Analysis.created_at.desc(), Analysis.id.desc()).limit(limit)
-    return list(db.scalars(statement))
+    return [Analysis.from_row(row) for row in db.fetch_all(SELECT_HISTORY, (limit,))]
