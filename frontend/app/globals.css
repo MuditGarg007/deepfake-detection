@@ -1,18 +1,19 @@
 @import "tailwindcss";
 
-/* Monochrome, light-only design tokens. Everything in the UI is drawn from this
-   single ink ramp — status is carried by weight, fill and glyph, never hue. */
+/* Light + coffee brown palette. */
 :root {
   color-scheme: light;
 
   --background: #ffffff;
-  --surface: #fafafa;
-  --surface-sunken: #f4f4f5;
-  --line: #ebebeb;
-  --line-strong: #d8d8d8;
-  --foreground: #0a0a0a;
-  --muted: #666666;
-  --faint: #999999;
+  --surface: #faf6f1;
+  --surface-sunken: #f2eae0;
+  --line: #e6dbcd;
+  --line-strong: #d2c1ad;
+  --foreground: #33251c;
+  --muted: #6f5b4b;
+  --faint: #9c8776;
+  --brown: #6f4e37;
+  --brown-dark: #54392a;
 }
 
 @theme inline {
@@ -24,31 +25,26 @@
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-faint: var(--faint);
+  --color-brown: var(--brown);
+  --color-brown-dark: var(--brown-dark);
 
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-inter);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  -webkit-font-smoothing: antialiased;
+  font-family: var(--font-inter), Arial, Helvetica, sans-serif;
 }
 
-::selection {
-  background: var(--foreground);
-  color: var(--background);
+a,
+button,
+input,
+[tabindex] {
+  outline-color: var(--brown);
 }
 
-/* Focus ring: one style everywhere, monochrome. */
-:where(a, button, input, [tabindex]):focus-visible {
-  outline: 2px solid var(--foreground);
-  outline-offset: 2px;
-  border-radius: 6px;
-}
-
-/* Indeterminate progress used while the backend runs the pipeline. */
+/* Loading bar shown while the backend runs the pipeline. */
 @keyframes df-sweep {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(400%); }
@@ -58,33 +54,16 @@ body {
   position: absolute;
   inset-block: 0;
   width: 25%;
-  background: var(--foreground);
-  animation: df-sweep 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-
-@keyframes df-fade-up {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: none; }
-}
-.df-enter {
-  animation: df-fade-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  background: var(--brown);
+  animation: df-sweep 1.4s linear infinite;
 }
 
 @keyframes df-pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+  50% { opacity: 0.4; }
 }
-.df-pulse { animation: df-pulse 1.6s ease-in-out infinite; }
+.df-pulse { animation: df-pulse 1.5s ease-in-out infinite; }
 
 @media (prefers-reduced-motion: reduce) {
-  .df-sweep::after, .df-enter, .df-pulse { animation: none; }
-}
-
-/* 45° hatch — the secondary (non-shade) encoding for the SUSPICIOUS state. */
-.df-hatch {
-  background-image: repeating-linear-gradient(
-    45deg,
-    var(--line-strong) 0 1px,
-    transparent 1px 5px
-  );
+  .df-sweep::after, .df-pulse { animation: none; }
 }

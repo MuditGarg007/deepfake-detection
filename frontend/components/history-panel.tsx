@@ -1,11 +1,10 @@
 "use client";
 
-/** `GET /history` — the recent analyses rail; a row loads its full result. */
+/** `GET /history` shows the recent analyses; a row loads its full result. */
 
 import type { HistoryItem } from "@/lib/types";
 import { percent, relativeTime } from "@/lib/format";
-import { StatusGlyph } from "./status-badge";
-import { FilmIcon } from "./icons";
+import { StatusDot } from "./status-badge";
 import { Card, CardHeader, ErrorNote, cx } from "./ui";
 
 export function HistoryPanel({
@@ -36,13 +35,12 @@ export function HistoryPanel({
         <ul className="divide-y divide-line">
           {[0, 1, 2, 3].map((row) => (
             <li key={row} className="flex items-center gap-3 px-4 py-3">
-              <span className="df-pulse size-6 rounded-full bg-sunken" />
-              <span className="df-pulse h-3 flex-1 rounded bg-sunken" />
+              <span className="df-pulse h-4 flex-1 rounded bg-sunken" />
             </li>
           ))}
         </ul>
       ) : items.length === 0 ? (
-        <p className="px-4 py-8 text-center text-xs text-muted">
+        <p className="px-4 py-8 text-center text-sm text-muted">
           Nothing analyzed yet. Your results will collect here.
         </p>
       ) : (
@@ -54,26 +52,21 @@ export function HistoryPanel({
                 onClick={() => onSelect(item.id)}
                 aria-current={item.id === activeId}
                 className={cx(
-                  "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-150",
+                  "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors",
                   item.id === activeId ? "bg-sunken" : "hover:bg-surface",
                 )}
               >
-                <StatusGlyph status={item.status} />
+                <StatusDot status={item.status} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-medium">
+                  <span className="block truncate text-sm font-medium">
                     {item.filename}
                   </span>
-                  <span className="flex items-center gap-1.5 text-[11px] text-faint">
+                  <span className="block text-xs text-muted">
                     {relativeTime(item.created_at)}
-                    {item.has_video ? (
-                      <>
-                        <FilmIcon className="size-3" />
-                        <span className="sr-only">video available</span>
-                      </>
-                    ) : null}
+                    {item.has_video ? ", video saved" : ""}
                   </span>
                 </span>
-                <span className="font-mono text-xs tabular-nums text-muted">
+                <span className="text-sm font-medium text-brown">
                   {percent(item.fake_probability, 0)}
                 </span>
               </button>

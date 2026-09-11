@@ -2,8 +2,8 @@
 
 /**
  * The clip the verdict was drawn from, played back from
- * `GET /analysis/{id}/video`. Native controls carry the transport — keyboard,
- * volume, fullscreen and picture-in-picture come free — and the one thing added
+ * `GET /analysis/{id}/video`. Native controls carry the transport (keyboard,
+ * volume, fullscreen and picture-in-picture come free) and the one thing added
  * on top is a jump straight to the suspicious window the backend flagged.
  */
 
@@ -12,7 +12,6 @@ import { useCallback, useRef, useState } from "react";
 import { videoUrl } from "@/lib/api";
 import type { Analysis } from "@/lib/types";
 import { seconds } from "@/lib/format";
-import { ClockIcon } from "./icons";
 import { Button, Card, CardHeader, ErrorNote } from "./ui";
 
 export function VideoPlayer({ analysis }: { analysis: Analysis }) {
@@ -23,8 +22,8 @@ export function VideoPlayer({ analysis }: { analysis: Analysis }) {
   const end = analysis.suspicious_end;
   const hasWindow = start !== null && end !== null;
 
-  // Seek a shade ahead of the window's first frame so the flagged stretch is
-  // already on screen when playback starts.
+  // Seek to the window's first frame so the flagged stretch is already on screen
+  // when playback starts.
   const playSuspicious = useCallback(() => {
     const video = videoRef.current;
     if (!video || start === null) return;
@@ -38,7 +37,7 @@ export function VideoPlayer({ analysis }: { analysis: Analysis }) {
     return (
       <Card>
         <CardHeader title="Source video" />
-        <p className="px-5 py-4 text-[13px] text-muted">
+        <p className="px-5 py-4 text-base text-muted">
           The source file for this analysis is no longer on the server, so there is
           nothing to play back. The scores below are unaffected.
         </p>
@@ -54,14 +53,13 @@ export function VideoPlayer({ analysis }: { analysis: Analysis }) {
         action={
           hasWindow ? (
             <Button size="sm" onClick={playSuspicious} className="shrink-0">
-              <ClockIcon className="size-3.5" />
               Jump to {seconds(start)}
             </Button>
           ) : undefined
         }
       />
 
-      <div className="bg-[#0a0a0a]">
+      <div className="bg-foreground">
         <video
           // Remount on a different analysis so the element reloads its source
           // instead of holding the previous clip's buffered state.
@@ -81,7 +79,7 @@ export function VideoPlayer({ analysis }: { analysis: Analysis }) {
       {failed ? (
         <div className="px-5 py-4">
           <ErrorNote>
-            The browser could not decode this file. Detection still ran on it — some
+            The browser could not decode this file. Detection still ran on it. Some
             containers the pipeline accepts (.avi in particular) have no in-browser
             playback support.
           </ErrorNote>
@@ -89,8 +87,8 @@ export function VideoPlayer({ analysis }: { analysis: Analysis }) {
       ) : null}
 
       {hasWindow ? (
-        <p className="border-t border-line px-5 py-3 font-mono text-[11px] text-faint">
-          suspicious window {seconds(start)} – {seconds(end)}
+        <p className="border-t border-line px-5 py-3 text-sm text-muted">
+          Suspicious window: {seconds(start)} to {seconds(end)}
         </p>
       ) : null}
     </Card>

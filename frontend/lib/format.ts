@@ -1,4 +1,4 @@
-/** Formatting helpers shared by the Phase 5 screens. */
+/** Formatting helpers shared by the screens. */
 
 import type { RiskStatus } from "./types";
 
@@ -23,7 +23,7 @@ export function fileSize(bytes: number): string {
 
 /**
  * The SQLite fallback stores naive timestamps, so a value with no zone marker is
- * read as UTC — matching what Postgres returns for the same row.
+ * read as UTC, matching what Postgres returns for the same row.
  */
 export function parseTimestamp(value: string): Date {
   const hasZone = /(Z|[+-]\d{2}:?\d{2})$/.test(value);
@@ -66,8 +66,8 @@ export const STATUS_LABEL: Record<RiskStatus, string> = {
 
 export const STATUS_BLURB: Record<RiskStatus, string> = {
   REAL: "Frame scores stayed below the suspicion threshold across the clip.",
-  SUSPICIOUS: "Manipulation signals are present but inconclusive — review manually.",
-  HIGH_RISK: "Strong, sustained manipulation signal. Treat this video as fabricated.",
+  SUSPICIOUS: "Some manipulation signals are present, but the result is not conclusive. Review the video manually.",
+  HIGH_RISK: "Strong and sustained manipulation signal. Treat this video as fabricated.",
 };
 
 /** Risk thresholds mirrored from `backend/config.py`. */

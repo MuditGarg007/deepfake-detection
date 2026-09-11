@@ -21,7 +21,7 @@ export interface Analysis {
   has_video: boolean;
 }
 
-/** One row of `GET /history` — no frame scores. */
+/** One row of `GET /history`, without frame scores. */
 export interface HistoryItem {
   id: number;
   filename: string;

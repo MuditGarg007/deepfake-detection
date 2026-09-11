@@ -1,4 +1,4 @@
-/** Shared primitives — one card, one button, one label, used everywhere. */
+/** Shared building blocks used across the app. */
 
 import type { ComponentProps, ReactNode } from "react";
 
@@ -14,11 +14,7 @@ export function Card({
   return (
     <section
       {...props}
-      className={cx(
-        "rounded-xl border border-line bg-background",
-        "shadow-[0_1px_2px_rgba(0,0,0,0.04)]",
-        className,
-      )}
+      className={cx("rounded-lg border border-line bg-background", className)}
     >
       {children}
     </section>
@@ -35,23 +31,19 @@ export function CardHeader({
   action?: ReactNode;
 }) {
   return (
-    <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
+    <header className="flex items-center justify-between gap-3 border-b border-line bg-surface px-5 py-3">
       <div className="min-w-0">
-        <h2 className="text-[13px] font-medium tracking-tight">{title}</h2>
-        {hint ? <p className="mt-0.5 text-xs text-muted">{hint}</p> : null}
+        <h2 className="text-base font-semibold">{title}</h2>
+        {hint ? <p className="mt-0.5 text-sm text-muted">{hint}</p> : null}
       </div>
       {action}
     </header>
   );
 }
 
-/** Small uppercase caption used above every metric. */
+/** Small caption placed above a number. */
 export function Label({ children }: { children: ReactNode }) {
-  return (
-    <span className="text-[10px] font-medium uppercase tracking-[0.09em] text-faint">
-      {children}
-    </span>
-  );
+  return <span className="text-sm text-muted">{children}</span>;
 }
 
 type ButtonProps = ComponentProps<"button"> & {
@@ -61,11 +53,11 @@ type ButtonProps = ComponentProps<"button"> & {
 
 const VARIANTS: Record<NonNullable<ButtonProps["variant"]>, string> = {
   primary:
-    "bg-foreground text-background border border-foreground hover:bg-[#333] hover:border-[#333] disabled:bg-[#c9c9c9] disabled:border-[#c9c9c9]",
+    "bg-brown text-white border border-brown hover:bg-brown-dark hover:border-brown-dark disabled:bg-line-strong disabled:border-line-strong",
   secondary:
-    "bg-background text-foreground border border-line-strong hover:bg-sunken disabled:text-faint",
+    "bg-background text-foreground border border-line-strong hover:bg-surface disabled:text-faint",
   ghost:
-    "bg-transparent text-muted border border-transparent hover:bg-sunken hover:text-foreground",
+    "bg-transparent text-muted border border-transparent hover:bg-surface hover:text-brown",
 };
 
 export function Button({
@@ -78,9 +70,9 @@ export function Button({
     <button
       {...props}
       className={cx(
-        "inline-flex items-center justify-center gap-2 rounded-lg font-medium",
-        "transition-colors duration-150 disabled:cursor-not-allowed",
-        size === "sm" ? "h-8 px-3 text-xs" : "h-10 px-4 text-sm",
+        "inline-flex items-center justify-center gap-2 rounded-md font-medium",
+        "transition-colors disabled:cursor-not-allowed",
+        size === "sm" ? "h-8 px-3 text-sm" : "h-10 px-4 text-base",
         VARIANTS[variant],
         className,
       )}
@@ -88,17 +80,14 @@ export function Button({
   );
 }
 
-/** Inline error strip — a hairline rule plus the backend's `detail` text. */
+/** Error message shown above the form it belongs to. */
 export function ErrorNote({ children }: { children: ReactNode }) {
   return (
     <p
       role="alert"
-      className="flex gap-2 rounded-lg border border-line-strong bg-sunken px-3 py-2.5 text-xs leading-relaxed text-foreground"
+      className="rounded-md border border-line-strong bg-surface px-3 py-2 text-sm leading-relaxed text-foreground"
     >
-      <span aria-hidden="true" className="font-mono">
-        !
-      </span>
-      <span>{children}</span>
+      {children}
     </p>
   );
 }
