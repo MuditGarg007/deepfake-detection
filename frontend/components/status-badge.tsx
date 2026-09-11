@@ -29,18 +29,3 @@ export function StatusBadge({
     </span>
   );
 }
-
-/** Compact variant for the history rows. */
-export function StatusDot({ status }: { status: RiskStatus }) {
-  return (
-    <span
-      title={STATUS_LABEL[status]}
-      className={cx(
-        "inline-block size-2.5 shrink-0 rounded-full border",
-        STYLES[status],
-      )}
-    >
-      <span className="sr-only">{STATUS_LABEL[status]}</span>
-    </span>
-  );
-}

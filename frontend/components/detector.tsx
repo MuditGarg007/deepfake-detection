@@ -109,44 +109,40 @@ export function Detector() {
   return (
     <div className="flex min-h-full flex-1 flex-col">
       <header className="border-b border-line bg-surface">
-        <div className="mx-auto w-full max-w-5xl px-6 py-4">
+        <div className="mx-auto w-full max-w-3xl px-6 py-4">
           <h1 className="text-lg font-bold text-brown">
             Deepfake Detection &amp; Alert System
           </h1>
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
-          <div className="space-y-4">
-            {analysis ? (
-              <ResultPanel analysis={analysis} onReset={() => setAnalysis(null)} />
-            ) : (
-              <UploadCard
-                onAnalyze={onAnalyze}
-                busy={busy}
-                uploadProgress={uploadProgress}
-                elapsed={elapsed}
-                error={error}
-                onDismissError={() => setError(null)}
-              />
-            )}
-          </div>
-
-          <aside>
-            <HistoryPanel
-              items={history}
-              loading={historyLoading}
-              error={historyError}
-              activeId={analysis?.id ?? null}
-              onSelect={onSelect}
+      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-8">
+        <div className="space-y-6">
+          {analysis ? (
+            <ResultPanel analysis={analysis} onReset={() => setAnalysis(null)} />
+          ) : (
+            <UploadCard
+              onAnalyze={onAnalyze}
+              busy={busy}
+              uploadProgress={uploadProgress}
+              elapsed={elapsed}
+              error={error}
+              onDismissError={() => setError(null)}
             />
-          </aside>
+          )}
+
+          <HistoryPanel
+            items={history}
+            loading={historyLoading}
+            error={historyError}
+            activeId={analysis?.id ?? null}
+            onSelect={onSelect}
+          />
         </div>
       </main>
 
       <footer className="border-t border-line bg-surface">
-        <p className="mx-auto w-full max-w-5xl px-6 py-4 text-sm text-muted">
+        <p className="mx-auto w-full max-w-3xl px-6 py-4 text-sm text-muted">
           Frames are sampled at about 5 fps, faces are cropped with MTCNN, and each
           crop is scored by an EfficientNet-B0 classifier. Risk thresholds: 0.40 and
           0.70.
