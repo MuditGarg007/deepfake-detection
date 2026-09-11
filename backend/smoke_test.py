@@ -1,14 +1,3 @@
-"""T9 smoke test — drives every endpoint against a running server.
-
-    uvicorn backend.main:app --port 8000        # in one shell
-    python backend/smoke_test.py                # in another
-
-Checks the happy path on a real and a fake sample plus the four error cases
-from T8 (bad extension, oversized, unreadable video, unknown id).
-"""
-
-from __future__ import annotations
-
 import argparse
 import sys
 import tempfile
@@ -20,24 +9,21 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_REAL = PROJECT_DIR / "data/raw/Real/006.mp4"
 DEFAULT_FAKE = PROJECT_DIR / "data/raw/Deepfakes/006_002.mp4"
 
-failures: list[str] = []
+failures = []
 
 
-def check(condition: bool, message: str) -> None:
+def check(condition, message):
     print(f"{'PASS' if condition else 'FAIL'}  {message}")
     if not condition:
         failures.append(message)
 
 
-def upload(client: httpx.Client, path: Path, name: str | None = None) -> httpx.Response:
+def upload(client, path, name=None):
     with open(path, "rb") as handle:
-        return client.post(
-            "/analyze", files={"file": (name or path.name, handle, "video/mp4")}
-        )
+        return client.post("/analyze", files={"file": (name or path.name, handle, "video/mp4")})
 
 
-def _write_faceless_video(path: Path) -> Path:
-    """A 2 s clip of moving noise — readable, but MTCNN finds no face in it."""
+def write_faceless_video(path):
     import cv2
     import numpy as np
 
@@ -49,8 +35,8 @@ def _write_faceless_video(path: Path) -> Path:
     return path
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+def main():
+    parser = argparse.ArgumentParser()
     parser.add_argument("--url", default="http://127.0.0.1:8000")
     parser.add_argument("--real", type=Path, default=DEFAULT_REAL)
     parser.add_argument("--fake", type=Path, default=DEFAULT_FAKE)
@@ -63,9 +49,8 @@ def main() -> int:
     health = response.json()
     check(health.get("status") == "ok", f"health status = {health.get('status')}")
     if not health.get("model_loaded"):
-        print("WARN  server is in stub mode (no checkpoint) — scores will all be 0.5")
+        print("WARN  server is in stub mode (no checkpoint) - scores will all be 0.5")
 
-    # --- happy path: real sample -------------------------------------------
     response = upload(client, args.real)
     check(response.status_code == 201, f"POST /analyze (real) -> {response.status_code}")
     real = response.json() if response.status_code == 201 else {}
@@ -75,7 +60,6 @@ def main() -> int:
         check(real["fake_probability"] < 0.4, "real sample probability < 0.4")
         check(len(real["frame_scores"]) > 0, "real sample has frame scores")
 
-    # --- happy path: fake sample -------------------------------------------
     response = upload(client, args.fake)
     check(response.status_code == 201, f"POST /analyze (fake) -> {response.status_code}")
     fake = response.json() if response.status_code == 201 else {}
@@ -88,13 +72,11 @@ def main() -> int:
             "fake sample has a suspicious region",
         )
 
-    # --- GET /analysis/{id} -------------------------------------------------
     if fake:
         response = client.get(f"/analysis/{fake['id']}")
         check(response.status_code == 200, f"GET /analysis/{fake['id']} -> {response.status_code}")
         check(response.json() == fake, "GET by id matches the upload response")
 
-    # --- GET /analysis/{id}/video -------------------------------------------
     if fake:
         check(fake["has_video"], "upload response reports a stored video")
         response = client.get(f"/analysis/{fake['id']}/video")
@@ -106,14 +88,34 @@ def main() -> int:
             response.headers.get("content-type") == "video/mp4",
             f"video content-type = {response.headers.get('content-type')}",
         )
-        # Range support is what lets the player seek without a full download.
-        response = client.get(
-            f"/analysis/{fake['id']}/video", headers={"Range": "bytes=0-99"}
-        )
+        response = client.get(f"/analysis/{fake['id']}/video", headers={"Range": "bytes=0-99"})
         check(response.status_code == 206, f"ranged video GET -> {response.status_code} (want 206)")
-        check(len(response.content) == 100, f"ranged video GET returned {len(response.content)} bytes")
+        check(
+            len(response.content) == 100,
+            f"ranged video GET returned {len(response.content)} bytes",
+        )
 
-    # --- GET /history -------------------------------------------------------
+    if fake:
+        response = client.get(f"/analysis/{fake['id']}/frame")
+        check(response.status_code == 200, f"GET /analysis/{fake['id']}/frame -> {response.status_code}")
+        check(
+            response.headers.get("content-type") == "image/jpeg",
+            f"frame content-type = {response.headers.get('content-type')}",
+        )
+
+        response = client.post(f"/analysis/{fake['id']}/feedback", json={"label": "FAKE"})
+        check(response.status_code == 200, f"POST feedback -> {response.status_code}")
+        check(response.json()["user_feedback"] == "FAKE", "feedback stored as FAKE")
+        response = client.post(f"/analysis/{fake['id']}/feedback", json={"label": None})
+        check(response.json()["user_feedback"] is None, "feedback cleared")
+
+        response = client.post(f"/analysis/{fake['id']}/rerun")
+        check(response.status_code == 200, f"POST rerun -> {response.status_code}")
+        check(
+            response.json()["status"] == fake["status"],
+            "rerun returns the same verdict",
+        )
+
     response = client.get("/history")
     check(response.status_code == 200, f"GET /history -> {response.status_code}")
     rows = response.json()
@@ -125,7 +127,6 @@ def main() -> int:
             "history contains both uploads",
         )
 
-    # --- T8 error cases -----------------------------------------------------
     with tempfile.TemporaryDirectory() as tmp:
         bad = Path(tmp) / "notes.txt"
         bad.write_text("not a video")
@@ -142,7 +143,7 @@ def main() -> int:
         response = upload(client, garbage)
         check(response.status_code == 422, f"unreadable video -> {response.status_code} (want 422)")
 
-        faceless = _write_faceless_video(Path(tmp) / "faceless.mp4")
+        faceless = write_faceless_video(Path(tmp) / "faceless.mp4")
         response = upload(client, faceless)
         check(response.status_code == 422, f"no faces -> {response.status_code} (want 422)")
 

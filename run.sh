@@ -78,7 +78,7 @@ if [[ ! -d frontend/node_modules ]]; then
 fi
 
 if [[ ! -f backend/.env ]]; then
-  say "backend/.env not found — copying backend/.env.example (SQLite fallback, no Neon)"
+  say "backend/.env not found — copying backend/.env.example (set NEON_DB_URL in it)"
   cp backend/.env.example backend/.env
 fi
 
@@ -86,7 +86,7 @@ mkdir -p "$LOG_DIR"
 
 # --- start both --------------------------------------------------------------
 
-# Env beats backend/.env in pydantic-settings, so CORS follows the real port.
+# Env beats backend/.env, so CORS follows the real port.
 export CORS_ORIGINS="http://localhost:$FRONTEND_PORT,http://127.0.0.1:$FRONTEND_PORT"
 # Next inlines NEXT_PUBLIC_* from the environment, so no .env.local edit needed.
 export NEXT_PUBLIC_API_URL="http://localhost:$BACKEND_PORT"

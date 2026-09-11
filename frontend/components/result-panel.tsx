@@ -14,6 +14,15 @@ const FEEDBACK_LABEL: Record<Feedback, string> = {
   FAKE: "fake",
 };
 
+/**
+ * Whether the viewer's answer disagrees with the verdict. SUSPICIOUS is the
+ * model saying it could not tell, so it does not contradict either answer.
+ */
+function contradicts(analysis: Analysis, label: Feedback): boolean {
+  if (label === "FAKE") return analysis.status === "REAL";
+  return analysis.status === "HIGH_RISK";
+}
+
 export function ResultPanel({
   analysis,
   onUpdate,
@@ -28,18 +37,27 @@ export function ResultPanel({
   // another analysis does not inherit the previous one's failure.
   const [frameFailedFor, setFrameFailedFor] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const [rechecking, setRechecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const showFrame = analysis.has_video && frameFailedFor !== analysis.id;
 
-  async function run(work: () => Promise<Analysis>) {
+  async function submit(label: Feedback | null) {
     setBusy(true);
     setError(null);
     try {
-      onUpdate(await work());
+      let updated = await sendFeedback(analysis.id, label);
+      // Disagreeing with the verdict is the one case worth spending another
+      // pass on, so it is run here instead of leaving it to the viewer.
+      if (label && updated.has_video && contradicts(updated, label)) {
+        setRechecking(true);
+        updated = await rerunAnalysis(updated.id);
+      }
+      onUpdate(updated);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Something went wrong");
     } finally {
+      setRechecking(false);
       setBusy(false);
     }
   }
@@ -72,7 +90,7 @@ export function ResultPanel({
             <button
               type="button"
               disabled={busy}
-              onClick={() => run(() => sendFeedback(analysis.id, null))}
+              onClick={() => submit(null)}
               className="text-brown underline disabled:no-underline"
             >
               Undo
@@ -81,20 +99,23 @@ export function ResultPanel({
         ) : (
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <span>Was this video real or fake?</span>
-            <Button
-              disabled={busy}
-              onClick={() => run(() => sendFeedback(analysis.id, "REAL"))}
-            >
+            <Button disabled={busy} onClick={() => submit("REAL")}>
               Real
             </Button>
-            <Button
-              disabled={busy}
-              onClick={() => run(() => sendFeedback(analysis.id, "FAKE"))}
-            >
+            <Button disabled={busy} onClick={() => submit("FAKE")}>
               Fake
             </Button>
           </div>
         )}
+
+        {rechecking ? (
+          <p className="mt-4 flex items-center gap-2 text-muted">
+            <span className="df-spinner" />
+            <span>
+              That does not match the result. Checking the video again
+            </span>
+          </p>
+        ) : null}
 
         {error ? (
           <div className="mt-4">
@@ -102,16 +123,9 @@ export function ResultPanel({
           </div>
         ) : null}
 
-        <div className="mt-6 flex flex-wrap gap-3">
+        <div className="mt-6">
           <Button variant="secondary" onClick={onReset}>
             Analyze another video
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={busy || !analysis.has_video}
-            onClick={() => run(() => rerunAnalysis(analysis.id))}
-          >
-            {busy ? "Working..." : "Run again"}
           </Button>
         </div>
       </div>
