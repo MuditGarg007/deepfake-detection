@@ -108,6 +108,14 @@ export function videoUrl(id: number): string {
   return `${API_URL}/analysis/${id}/video`;
 }
 
+/**
+ * The highest-scoring sampled frame of an analysis, as a JPEG. The backend
+ * re-reads it from the source video, so it 404s once that file is gone.
+ */
+export function frameUrl(id: number): string {
+  return `${API_URL}/analysis/${id}/frame`;
+}
+
 export function getHistory(limit = 100): Promise<HistoryItem[]> {
   return request<HistoryItem[]>(`/history?limit=${limit}`);
 }
