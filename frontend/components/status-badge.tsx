@@ -1,23 +1,13 @@
-/**
- * Risk state in a monochrome palette: fill weight ranks the three states, and a
- * glyph plus the written label carries the meaning so shade is never the only cue.
- */
+/** Risk state shown as a plain text label. */
 
 import type { RiskStatus } from "@/lib/types";
 import { STATUS_LABEL } from "@/lib/format";
-import { AlertIcon, CheckIcon, WarningIcon } from "./icons";
 import { cx } from "./ui";
 
 const STYLES: Record<RiskStatus, string> = {
-  REAL: "border-line-strong bg-background text-foreground",
-  SUSPICIOUS: "border-line-strong bg-sunken text-foreground",
-  HIGH_RISK: "border-foreground bg-foreground text-background",
-};
-
-const ICONS: Record<RiskStatus, typeof CheckIcon> = {
-  REAL: CheckIcon,
-  SUSPICIOUS: WarningIcon,
-  HIGH_RISK: AlertIcon,
+  REAL: "border-line-strong bg-surface text-muted",
+  SUSPICIOUS: "border-brown bg-surface text-brown",
+  HIGH_RISK: "border-brown bg-brown text-white",
 };
 
 export function StatusBadge({
@@ -27,33 +17,29 @@ export function StatusBadge({
   status: RiskStatus;
   size?: "sm" | "md";
 }) {
-  const Icon = ICONS[status];
   return (
     <span
       className={cx(
-        "inline-flex items-center gap-1.5 rounded-full border font-medium",
-        size === "sm" ? "px-2 py-0.5 text-[11px]" : "px-2.5 py-1 text-xs",
+        "inline-block rounded border font-medium",
+        size === "sm" ? "px-2 py-0.5 text-xs" : "px-2.5 py-1 text-sm",
         STYLES[status],
       )}
     >
-      <Icon className={size === "sm" ? "size-3" : "size-3.5"} />
       {STATUS_LABEL[status]}
     </span>
   );
 }
 
-/** Icon-only variant for dense rows; the label rides along for screen readers. */
-export function StatusGlyph({ status }: { status: RiskStatus }) {
-  const Icon = ICONS[status];
+/** Compact variant for the history rows. */
+export function StatusDot({ status }: { status: RiskStatus }) {
   return (
     <span
       title={STATUS_LABEL[status]}
       className={cx(
-        "inline-flex size-6 shrink-0 items-center justify-center rounded-full border",
+        "inline-block size-2.5 shrink-0 rounded-full border",
         STYLES[status],
       )}
     >
-      <Icon className="size-3.5" />
       <span className="sr-only">{STATUS_LABEL[status]}</span>
     </span>
   );

@@ -9,14 +9,13 @@
 import { useCallback, useRef, useState } from "react";
 
 import { fileSize } from "@/lib/format";
-import { CloseIcon, FilmIcon, SpinnerIcon, UploadIcon } from "./icons";
 import { Button, Card, ErrorNote, cx } from "./ui";
 
 const ACCEPTED = [".mp4", ".avi", ".mov"];
 const MAX_MB = 200;
 
 const STAGES = [
-  "Sampling frames at ~5 fps",
+  "Sampling frames at about 5 fps",
   "Detecting and cropping faces",
   "Scoring crops with the model",
   "Aggregating the verdict",
@@ -25,10 +24,10 @@ const STAGES = [
 function validate(file: File): string | null {
   const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
   if (!ACCEPTED.includes(extension)) {
-    return `Unsupported file type — allowed: ${ACCEPTED.join(", ")}`;
+    return `Unsupported file type. Allowed types are ${ACCEPTED.join(", ")}`;
   }
   if (file.size > MAX_MB * 1024 * 1024) {
-    return `File is ${fileSize(file.size)} — the limit is ${MAX_MB} MB`;
+    return `This file is ${fileSize(file.size)}. The limit is ${MAX_MB} MB.`;
   }
   if (file.size === 0) return "That file is empty";
   return null;
@@ -75,12 +74,12 @@ export function UploadCard({
   const stage = STAGES[Math.min(STAGES.length - 1, Math.floor(elapsed / 3))];
 
   return (
-    <Card className="overflow-hidden">
+    <Card>
       <div className="px-5 pt-5">
-        <h1 className="text-lg font-semibold tracking-tight">Analyze a video</h1>
-        <p className="mt-1 text-[13px] leading-relaxed text-muted">
+        <h2 className="text-xl font-semibold">Analyze a video</h2>
+        <p className="mt-2 text-base leading-relaxed text-muted">
           Faces are sampled from the clip and scored frame by frame. Detection runs
-          synchronously — a short clip takes a few seconds.
+          synchronously, so a short clip takes a few seconds.
         </p>
       </div>
 
@@ -93,8 +92,8 @@ export function UploadCard({
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
           className={cx(
-            "rounded-xl border border-dashed transition-colors duration-150",
-            dragging ? "border-foreground bg-sunken" : "border-line-strong bg-surface",
+            "rounded-md border-2 border-dashed transition-colors",
+            dragging ? "border-brown bg-surface" : "border-line-strong bg-surface",
             busy && "opacity-60",
           )}
         >
@@ -109,24 +108,20 @@ export function UploadCard({
 
           {file ? (
             <div className="flex items-center gap-3 px-4 py-4">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-line bg-background">
-                <FilmIcon className="size-4" />
-              </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[13px] font-medium">{file.name}</p>
-                <p className="font-mono text-[11px] text-faint">{fileSize(file.size)}</p>
+                <p className="truncate text-base font-medium">{file.name}</p>
+                <p className="text-sm text-muted">{fileSize(file.size)}</p>
               </div>
               {!busy ? (
                 <Button
-                  variant="ghost"
+                  variant="secondary"
                   size="sm"
                   onClick={() => {
                     setFile(null);
                     if (inputRef.current) inputRef.current.value = "";
                   }}
-                  aria-label="Remove selected file"
                 >
-                  <CloseIcon className="size-3.5" />
+                  Remove
                 </Button>
               ) : null}
             </div>
@@ -135,16 +130,14 @@ export function UploadCard({
               type="button"
               disabled={busy}
               onClick={() => inputRef.current?.click()}
-              className="flex w-full flex-col items-center gap-2 px-4 py-10 text-center"
+              className="flex w-full flex-col items-center gap-2 px-4 py-12 text-center"
             >
-              <span className="flex size-10 items-center justify-center rounded-full border border-line bg-background">
-                <UploadIcon className="size-4" />
+              <span className="text-base font-medium">
+                Drop a video here, or{" "}
+                <span className="text-brown underline">browse your files</span>
               </span>
-              <span className="text-[13px] font-medium">
-                Drop a video here, or <span className="underline underline-offset-2">browse</span>
-              </span>
-              <span className="font-mono text-[11px] text-faint">
-                {ACCEPTED.join(" · ")} — up to {MAX_MB} MB
+              <span className="text-sm text-muted">
+                {ACCEPTED.join(", ")} up to {MAX_MB} MB
               </span>
             </button>
           )}
@@ -163,7 +156,7 @@ export function UploadCard({
               <button
                 type="button"
                 onClick={onDismissError}
-                className="underline underline-offset-2"
+                className="text-brown underline"
               >
                 Dismiss
               </button>
@@ -173,24 +166,23 @@ export function UploadCard({
 
         {busy ? (
           <div className="mt-4 space-y-2">
-            <div className="relative h-1 overflow-hidden rounded-full bg-sunken">
+            <div className="relative h-2 overflow-hidden rounded bg-sunken">
               {uploading ? (
                 <div
-                  className="h-full bg-foreground transition-[width] duration-150"
+                  className="h-full bg-brown transition-[width]"
                   style={{ width: `${Math.round(uploadProgress * 100)}%` }}
                 />
               ) : (
                 <div className="df-sweep absolute inset-0" />
               )}
             </div>
-            <p className="flex items-center gap-2 text-xs text-muted">
-              <SpinnerIcon className="size-3.5" />
-              {uploading
-                ? `Uploading — ${Math.round(uploadProgress * 100)}%`
-                : stage}
-              <span className="ml-auto font-mono tabular-nums text-faint">
-                {elapsed.toFixed(0)}s
+            <p className="flex items-center justify-between gap-2 text-sm text-muted">
+              <span>
+                {uploading
+                  ? `Uploading ${Math.round(uploadProgress * 100)}%`
+                  : stage}
               </span>
+              <span>{elapsed.toFixed(0)}s</span>
             </p>
           </div>
         ) : (

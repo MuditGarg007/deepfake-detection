@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * Per-frame fake probability over the clip — one series, so the title names it
- * and no legend is needed. Reference lines mark the two risk thresholds from
- * `backend/config.py`, and the shaded band is the suspicious region the backend
- * derived. Hover gives a crosshair + tooltip; a table view holds the same numbers.
+ * Per-frame fake probability over the clip. There is only one series, so the
+ * title names it and no legend is needed. Reference lines mark the two risk
+ * thresholds from `backend/config.py`, and the shaded band is the suspicious
+ * region the backend derived. Hovering shows a crosshair and a tooltip, and a
+ * table view holds the same numbers.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -113,7 +114,7 @@ export function FrameTimeline({
 
   if (scores.length === 0) {
     return (
-      <p className="px-5 py-8 text-center text-xs text-muted">
+      <p className="px-5 py-8 text-center text-sm text-muted">
         No frame scores were recorded for this video.
       </p>
     );
@@ -137,7 +138,7 @@ export function FrameTimeline({
           onPointerMove={onMove}
           onPointerLeave={() => setHover(null)}
         >
-          {/* Gridlines — recessive, behind everything. */}
+          {/* Gridlines, kept faint so they sit behind everything. */}
           {[0, 0.25, 0.5, 0.75, 1].map((tick) => (
             <g key={tick}>
               <line
@@ -153,7 +154,7 @@ export function FrameTimeline({
                 y={y(tick)}
                 textAnchor="end"
                 dominantBaseline="middle"
-                className="fill-[var(--faint)] font-mono text-[9px]"
+                className="fill-[var(--muted)] text-[10px]"
               >
                 {tick * 100}
               </text>
@@ -168,7 +169,7 @@ export function FrameTimeline({
                 y={PAD.top}
                 width={Math.max(2, x(suspiciousEnd) - x(suspiciousStart))}
                 height={plotHeight}
-                fill="rgba(10,10,10,0.06)"
+                fill="rgba(111,78,55,0.10)"
               />
               <line
                 x1={x(suspiciousStart)}
@@ -191,8 +192,8 @@ export function FrameTimeline({
 
           {/* Risk thresholds. */}
           {[
-            { value: RISK_SUSPICIOUS, label: "suspicious 0.40" },
-            { value: FRAME_THRESHOLD, label: "high risk 0.70" },
+            { value: RISK_SUSPICIOUS, label: "Suspicious (0.40)" },
+            { value: FRAME_THRESHOLD, label: "High risk (0.70)" },
           ].map((reference) => (
             <g key={reference.label}>
               <line
@@ -212,7 +213,7 @@ export function FrameTimeline({
                 stroke="var(--background)"
                 strokeWidth={3}
                 paintOrder="stroke"
-                className="fill-[var(--muted)] text-[9px]"
+                className="fill-[var(--muted)] text-[10px]"
               >
                 {reference.label}
               </text>
@@ -221,27 +222,27 @@ export function FrameTimeline({
 
           <defs>
             <linearGradient id="df-area" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="rgba(10,10,10,0.16)" />
-              <stop offset="100%" stopColor="rgba(10,10,10,0)" />
+              <stop offset="0%" stopColor="rgba(111,78,55,0.18)" />
+              <stop offset="100%" stopColor="rgba(111,78,55,0)" />
             </linearGradient>
           </defs>
           <path d={area} fill="url(#df-area)" />
           <path
             d={line}
             fill="none"
-            stroke="var(--foreground)"
+            stroke="var(--brown)"
             strokeWidth={2}
             strokeLinejoin="round"
             strokeLinecap="round"
           />
 
-          {/* Peak frame, direct-labelled — the one point worth naming. */}
+          {/* Peak frame, the one point worth marking. */}
           <circle
             cx={x(peak.timestamp)}
             cy={y(peak.fake_probability)}
             r={4}
             fill="var(--background)"
-            stroke="var(--foreground)"
+            stroke="var(--brown)"
             strokeWidth={2}
           />
 
@@ -260,7 +261,7 @@ export function FrameTimeline({
               x={x(score.timestamp)}
               y={HEIGHT - 10}
               textAnchor="middle"
-              className="fill-[var(--faint)] font-mono text-[9px]"
+              className="fill-[var(--muted)] text-[10px]"
             >
               {seconds(score.timestamp)}
             </text>
@@ -274,7 +275,7 @@ export function FrameTimeline({
                 x2={x(active.timestamp)}
                 y1={PAD.top}
                 y2={PAD.top + plotHeight}
-                stroke="var(--foreground)"
+                stroke="var(--brown)"
                 strokeWidth={1}
                 strokeDasharray="2 2"
               />
@@ -282,7 +283,7 @@ export function FrameTimeline({
                 cx={x(active.timestamp)}
                 cy={y(active.fake_probability)}
                 r={5}
-                fill="var(--foreground)"
+                fill="var(--brown)"
                 stroke="var(--background)"
                 strokeWidth={2}
               />
@@ -292,12 +293,12 @@ export function FrameTimeline({
 
         {active ? (
           <div
-            className="pointer-events-none absolute top-1 -translate-x-1/2 rounded-lg border border-line bg-background px-2.5 py-1.5 text-[11px] shadow-[0_2px_8px_rgba(0,0,0,0.08)]"
+            className="pointer-events-none absolute top-1 -translate-x-1/2 rounded border border-line-strong bg-background px-2.5 py-1.5 text-xs"
             style={{ left: tooltipLeft }}
           >
-            <span className="font-mono text-muted">{seconds(active.timestamp)}</span>
+            <span className="text-muted">{seconds(active.timestamp)}</span>
             <span className="mx-1.5 text-line-strong">|</span>
-            <span className="font-medium tabular-nums">
+            <span className="font-medium">
               {percent(active.fake_probability)} fake
             </span>
           </div>
@@ -305,8 +306,8 @@ export function FrameTimeline({
       </div>
 
       <div className="mt-1 flex items-center justify-between gap-3 px-2">
-        <p className="text-[11px] text-faint">
-          {scores.length} frames scored · peak {percent(peak.fake_probability)} at{" "}
+        <p className="text-sm text-muted">
+          {scores.length} frames scored, peak {percent(peak.fake_probability)} at{" "}
           {seconds(peak.timestamp)}
         </p>
         <Button
@@ -320,9 +321,9 @@ export function FrameTimeline({
       </div>
 
       {showTable ? (
-        <div className="mt-2 max-h-56 overflow-y-auto rounded-lg border border-line">
+        <div className="mt-2 max-h-56 overflow-y-auto rounded border border-line">
           <table className="w-full text-left text-xs">
-            <thead className="sticky top-0 bg-sunken text-[10px] uppercase tracking-[0.09em] text-faint">
+            <thead className="sticky top-0 bg-sunken text-xs text-muted">
               <tr>
                 <th scope="col" className="px-3 py-2 font-medium">
                   Timestamp
@@ -332,7 +333,7 @@ export function FrameTimeline({
                 </th>
               </tr>
             </thead>
-            <tbody className="font-mono tabular-nums">
+            <tbody>
               {scores.map((score) => (
                 <tr key={score.timestamp} className="border-t border-line">
                   <td className="px-3 py-1.5 text-muted">{seconds(score.timestamp)}</td>

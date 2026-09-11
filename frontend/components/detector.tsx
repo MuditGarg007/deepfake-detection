@@ -9,7 +9,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, analyzeVideo, getAnalysis, getHistory } from "@/lib/api";
 import type { Analysis, HistoryItem } from "@/lib/types";
-import { HealthBadge } from "./health-badge";
 import { HistoryPanel } from "./history-panel";
 import { ResultPanel } from "./result-panel";
 import { UploadCard } from "./upload-card";
@@ -17,7 +16,7 @@ import { UploadCard } from "./upload-card";
 function message(error: unknown): string {
   if (error instanceof ApiError) {
     return error.status === 0
-      ? "Could not reach the backend — is it running on the API URL this app is pointed at?"
+      ? "Could not reach the backend. Is it running on the API URL this app is pointed at?"
       : error.message;
   }
   return error instanceof Error ? error.message : "Something went wrong";
@@ -109,24 +108,16 @@ export function Detector() {
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      <header className="sticky top-0 z-10 border-b border-line bg-background/85 backdrop-blur-sm">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-6 py-3.5">
-          <div className="flex items-center gap-2.5">
-            <span
-              aria-hidden="true"
-              className="df-hatch size-6 rounded-md border border-line-strong"
-            />
-            <span className="text-[13px] font-medium tracking-tight">
-              Deepfake Detection
-              <span className="hidden sm:inline"> &amp; Alert System</span>
-            </span>
-          </div>
-          <HealthBadge />
+      <header className="border-b border-line bg-surface">
+        <div className="mx-auto w-full max-w-5xl px-6 py-4">
+          <h1 className="text-lg font-bold text-brown">
+            Deepfake Detection &amp; Alert System
+          </h1>
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
           <div className="space-y-4">
             {analysis ? (
               <ResultPanel analysis={analysis} onReset={() => setAnalysis(null)} />
@@ -142,7 +133,7 @@ export function Detector() {
             )}
           </div>
 
-          <aside className="lg:sticky lg:top-24 lg:self-start">
+          <aside>
             <HistoryPanel
               items={history}
               loading={historyLoading}
@@ -154,10 +145,11 @@ export function Detector() {
         </div>
       </main>
 
-      <footer className="border-t border-line">
-        <p className="mx-auto w-full max-w-6xl px-6 py-4 text-[11px] text-faint">
-          Frame sampling at ~5 fps · MTCNN face crops · EfficientNet-B0 classifier ·
-          thresholds 0.40 / 0.70
+      <footer className="border-t border-line bg-surface">
+        <p className="mx-auto w-full max-w-5xl px-6 py-4 text-sm text-muted">
+          Frames are sampled at about 5 fps, faces are cropped with MTCNN, and each
+          crop is scored by an EfficientNet-B0 classifier. Risk thresholds: 0.40 and
+          0.70.
         </p>
       </footer>
     </div>

@@ -36,7 +36,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     try {
       detail = detailFrom(await response.json(), detail);
     } catch {
-      // non-JSON error body — keep the generic message
+      // non-JSON error body, keep the generic message
     }
     throw new ApiError(detail, response.status);
   }
