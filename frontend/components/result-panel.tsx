@@ -3,8 +3,7 @@
 /** Result screen: the verdict and the aggregate score, nothing else. */
 
 import type { Analysis } from "@/lib/types";
-import { percent } from "@/lib/format";
-import { StatusBadge } from "./status-badge";
+import { STATUS_LABEL, percent } from "@/lib/format";
 import { Button, Card } from "./ui";
 
 export function ResultPanel({
@@ -16,17 +15,13 @@ export function ResultPanel({
 }) {
   return (
     <Card>
-      <div className="p-5">
-        <h2 className="truncate text-xl font-semibold">{analysis.filename}</h2>
+      <div className="p-5 text-base">
+        <h2 className="truncate font-semibold">{analysis.filename}</h2>
 
-        <p className="mt-4 text-5xl font-bold text-brown">
-          {percent(analysis.fake_probability)}
+        <p className="mt-4">
+          Fake probability: {percent(analysis.fake_probability)}
         </p>
-        <p className="mt-1 text-sm text-muted">Fake probability</p>
-
-        <div className="mt-4">
-          <StatusBadge status={analysis.status} />
-        </div>
+        <p className="mt-1">Verdict: {STATUS_LABEL[analysis.status]}</p>
 
         <div className="mt-6">
           <Button variant="secondary" onClick={onReset}>
