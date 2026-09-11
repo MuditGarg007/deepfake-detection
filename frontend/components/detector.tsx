@@ -95,7 +95,15 @@ export function Detector() {
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-8">
         <div className="space-y-6">
           {analysis ? (
-            <ResultPanel analysis={analysis} onReset={() => setAnalysis(null)} />
+            <ResultPanel
+              analysis={analysis}
+              onUpdate={(updated) => {
+                setAnalysis(updated);
+                // A rerun can move the verdict, which the history row shows.
+                void refreshHistory();
+              }}
+              onReset={() => setAnalysis(null)}
+            />
           ) : (
             <UploadCard
               onAnalyze={onAnalyze}

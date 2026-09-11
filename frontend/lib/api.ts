@@ -1,6 +1,6 @@
 /** Thin client for the Phase 4 FastAPI backend (see backend/README.md). */
 
-import type { Analysis, Health, HistoryItem } from "./types";
+import type { Analysis, Feedback, Health, HistoryItem } from "./types";
 
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
@@ -114,6 +114,26 @@ export function videoUrl(id: number): string {
  */
 export function frameUrl(id: number): string {
   return `${API_URL}/analysis/${id}/frame`;
+}
+
+/**
+ * Record what the viewer says the video really was, or pass null to take an
+ * earlier answer back. Returns the updated analysis.
+ */
+export function sendFeedback(
+  id: number,
+  label: Feedback | null,
+): Promise<Analysis> {
+  return request<Analysis>(`/analysis/${id}/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ label }),
+  });
+}
+
+/** Score the stored video again and overwrite this analysis with the result. */
+export function rerunAnalysis(id: number): Promise<Analysis> {
+  return request<Analysis>(`/analysis/${id}/rerun`, { method: "POST" });
 }
 
 export function getHistory(limit = 100): Promise<HistoryItem[]> {

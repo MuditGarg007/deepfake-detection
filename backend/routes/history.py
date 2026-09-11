@@ -6,10 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse
 
 from ..config import settings
-from ..database import Db, get_db
+from ..database import Db, get_db, to_json
 from ..models import ALL_COLUMNS, HISTORY_COLUMNS, Analysis
-from ..schemas import AnalysisOut, HistoryOut
+from ..schemas import AnalysisOut, FeedbackIn, HistoryOut
 from ..services import video_processor
+from ..services.video_processor import NoFacesError, UnreadableVideoError
 
 # Browsers need a type they recognise; .avi is served but most will not play it.
 MEDIA_TYPES = {
@@ -24,6 +25,14 @@ SELECT_BY_ID = f"SELECT {ALL_COLUMNS} FROM analyses WHERE id = ?"
 SELECT_HISTORY = (
     f"SELECT {HISTORY_COLUMNS} FROM analyses ORDER BY created_at DESC, id DESC LIMIT ?"
 )
+UPDATE_FEEDBACK = f"UPDATE analyses SET user_feedback = ? WHERE id = ? RETURNING {ALL_COLUMNS}"
+UPDATE_RESULT = f"""
+UPDATE analyses SET
+    fake_probability = ?, status = ?,
+    suspicious_start = ?, suspicious_end = ?, frame_scores = ?
+WHERE id = ?
+RETURNING {ALL_COLUMNS}
+"""
 
 
 def _load(db: Db, analysis_id: int) -> Analysis:
@@ -111,6 +120,60 @@ def get_analysis_frame(analysis_id: int, db: Db = Depends(get_db)) -> Response:
         media_type="image/jpeg",
         headers={"Cache-Control": "public, max-age=3600"},
     )
+
+
+@router.post("/analysis/{analysis_id}/feedback", response_model=AnalysisOut)
+def set_feedback(
+    analysis_id: int, body: FeedbackIn, db: Db = Depends(get_db)
+) -> Analysis:
+    """Record what the viewer says the video really was.
+
+    Always optional, and never fed back into the model: it is stored next to
+    the prediction so the two can be compared later.
+    """
+    _load(db, analysis_id)  # 404 before writing anything
+    row = db.fetch_one(UPDATE_FEEDBACK, (body.label, analysis_id))
+    assert row is not None
+    return Analysis.from_row(row)
+
+
+@router.post("/analysis/{analysis_id}/rerun", response_model=AnalysisOut)
+def rerun_analysis(analysis_id: int, db: Db = Depends(get_db)) -> Analysis:
+    """Score the stored video again and overwrite this row's result.
+
+    The pipeline is deterministic, so this repeats the same verdict unless the
+    model file or the thresholds changed between the two runs. The row is
+    updated rather than duplicated, and the feedback on it is left alone since
+    it describes the video, not the run.
+    """
+    analysis = _load(db, analysis_id)
+    path = _source_path(analysis)
+
+    try:
+        result = video_processor.process_video(path, filename=analysis.filename)
+    except (UnreadableVideoError, NoFacesError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+    row = db.fetch_one(
+        UPDATE_RESULT,
+        (
+            result.fake_probability,
+            result.status,
+            result.suspicious_start,
+            result.suspicious_end,
+            to_json(
+                [
+                    {"timestamp": s.timestamp, "fake_probability": s.fake_probability}
+                    for s in result.frame_scores
+                ]
+            ),
+            analysis_id,
+        ),
+    )
+    assert row is not None
+    return Analysis.from_row(row)
 
 
 @router.get("/history", response_model=list[HistoryOut])

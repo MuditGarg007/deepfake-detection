@@ -1,57 +1,20 @@
-"""Pydantic-settings config read from backend/.env."""
-
+import os
 from pathlib import Path
 
-from pydantic import AliasChoices, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from dotenv import load_dotenv
 
-_BACKEND_DIR = Path(__file__).resolve().parent
+BACKEND_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = BACKEND_DIR.parent
 
+load_dotenv(BACKEND_DIR / ".env")
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=_BACKEND_DIR / ".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
+DATABASE_URL = os.getenv("NEON_DB_URL") or os.getenv("DATABASE_URL") or ""
+DATABASE_URL = DATABASE_URL.replace("+psycopg2", "")
 
-    # The Neon connection string. `DATABASE_URL` is accepted as an alias since
-    # that is the name used in docs/backend-roadmap.md §3.4.
-    NEON_DB_URL: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("NEON_DB_URL", "DATABASE_URL"),
-    )
-    MODEL_DIR: str = "machine-learning/checkpoints"  # relative to project root
-    UPLOAD_DIR: str = "uploads"
-    RISK_SUSPICIOUS: float = 0.4
-    RISK_HIGH: float = 0.7
-    FRAME_THRESHOLD: float = 0.7
-    MAX_UPLOAD_MB: int = 200
-    # Phase 5 frontend origins allowed by CORS.
-    CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
-
-    @property
-    def database_url(self) -> str:
-        """Neon when configured, otherwise a local SQLite file.
-
-        The fallback keeps the server (and the smoke test) runnable on a fresh
-        clone with no credentials; production/demo runs set NEON_DB_URL.
-        """
-        if self.NEON_DB_URL:
-            return self.NEON_DB_URL
-        return f"sqlite:///{_BACKEND_DIR / 'app.db'}"
-
-    @property
-    def cors_origins(self) -> list[str]:
-        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
-
-    @property
-    def upload_dir(self) -> Path:
-        """UPLOAD_DIR, resolved relative to backend/ when it is not absolute."""
-        directory = Path(self.UPLOAD_DIR)
-        if not directory.is_absolute():
-            directory = _BACKEND_DIR / directory
-        return directory
-
-
-settings = Settings()
+MODEL_DIR = os.getenv("MODEL_DIR", "machine-learning/checkpoints")
+UPLOAD_DIR = BACKEND_DIR / os.getenv("UPLOAD_DIR", "uploads")
+RISK_SUSPICIOUS = float(os.getenv("RISK_SUSPICIOUS", "0.4"))
+RISK_HIGH = float(os.getenv("RISK_HIGH", "0.7"))
+FRAME_THRESHOLD = float(os.getenv("FRAME_THRESHOLD", "0.7"))
+MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "200"))
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")

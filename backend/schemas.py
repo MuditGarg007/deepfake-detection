@@ -1,8 +1,6 @@
-"""Pydantic response schemas (T4)."""
-
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 
 class FrameScore(BaseModel):
@@ -11,8 +9,6 @@ class FrameScore(BaseModel):
 
 
 class AnalysisOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     filename: str
     fake_probability: float
@@ -21,13 +17,15 @@ class AnalysisOut(BaseModel):
     suspicious_end: float | None
     frame_scores: list[FrameScore]
     created_at: datetime
-    # Drives the player in the UI — false once the file is gone from disk.
+    user_feedback: str | None
     has_video: bool
 
 
-class HistoryOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class FeedbackIn(BaseModel):
+    label: str | None
 
+
+class HistoryOut(BaseModel):
     id: int
     filename: str
     fake_probability: float
