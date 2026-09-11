@@ -140,14 +140,6 @@ export function Detector() {
           />
         </div>
       </main>
-
-      <footer className="border-t border-line bg-surface">
-        <p className="mx-auto w-full max-w-3xl px-6 py-4 text-sm text-muted">
-          Frames are sampled at about 5 fps, faces are cropped with MTCNN, and each
-          crop is scored by an EfficientNet-B0 classifier. Risk thresholds: 0.40 and
-          0.70.
-        </p>
-      </footer>
     </div>
   );
 }
