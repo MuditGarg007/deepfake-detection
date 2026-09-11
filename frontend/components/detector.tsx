@@ -1,11 +1,6 @@
 "use client";
 
-/**
- * Screen orchestrator: upload -> synchronous analysis -> result, with the
- * history rail kept in sync. All three Phase 4 endpoints are driven from here.
- */
-
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { ApiError, analyzeVideo, getAnalysis, getHistory } from "@/lib/api";
 import type { Analysis, HistoryItem } from "@/lib/types";
@@ -25,15 +20,11 @@ function message(error: unknown): string {
 export function Detector() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [busy, setBusy] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
-
-  const startedAt = useRef(0);
 
   const refreshHistory = useCallback(async () => {
     try {
@@ -46,8 +37,6 @@ export function Detector() {
     }
   }, []);
 
-  // First paint: fill the history rail. Later refreshes go through
-  // `refreshHistory` after an analysis lands.
   useEffect(() => {
     let cancelled = false;
     getHistory(50)
@@ -67,25 +56,12 @@ export function Detector() {
     };
   }, []);
 
-  // A running clock while the pipeline works, so the wait is legible.
-  useEffect(() => {
-    if (!busy) return;
-    const timer = window.setInterval(
-      () => setElapsed((Date.now() - startedAt.current) / 1000),
-      100,
-    );
-    return () => window.clearInterval(timer);
-  }, [busy]);
-
   const onAnalyze = useCallback(
     async (file: File) => {
-      startedAt.current = Date.now();
-      setElapsed(0);
-      setUploadProgress(0);
       setError(null);
       setBusy(true);
       try {
-        const result = await analyzeVideo(file, { onProgress: setUploadProgress });
+        const result = await analyzeVideo(file);
         setAnalysis(result);
         void refreshHistory();
       } catch (cause) {
@@ -124,8 +100,6 @@ export function Detector() {
             <UploadCard
               onAnalyze={onAnalyze}
               busy={busy}
-              uploadProgress={uploadProgress}
-              elapsed={elapsed}
               error={error}
               onDismissError={() => setError(null)}
             />

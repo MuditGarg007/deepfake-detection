@@ -14,13 +14,6 @@ import { Button, Card, ErrorNote } from "./ui";
 const ACCEPTED = [".mp4", ".avi", ".mov"];
 const MAX_MB = 200;
 
-const STAGES = [
-  "Sampling frames at about 5 fps",
-  "Detecting and cropping faces",
-  "Scoring crops with the model",
-  "Aggregating the verdict",
-];
-
 function validate(file: File): string | null {
   const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
   if (!ACCEPTED.includes(extension)) {
@@ -36,15 +29,11 @@ function validate(file: File): string | null {
 export function UploadCard({
   onAnalyze,
   busy,
-  uploadProgress,
-  elapsed,
   error,
   onDismissError,
 }: {
   onAnalyze: (file: File) => void;
   busy: boolean;
-  uploadProgress: number;
-  elapsed: number;
   error: string | null;
   onDismissError: () => void;
 }) {
@@ -58,9 +47,6 @@ export function UploadCard({
     setLocalError(problem);
     setFile(problem ? null : candidate);
   }, []);
-
-  const uploading = busy && uploadProgress < 1;
-  const stage = STAGES[Math.min(STAGES.length - 1, Math.floor(elapsed / 3))];
 
   return (
     <Card>
@@ -127,25 +113,9 @@ export function UploadCard({
         ) : null}
 
         {busy ? (
-          <div className="mt-4 space-y-2">
-            <div className="relative h-2 overflow-hidden rounded bg-sunken">
-              {uploading ? (
-                <div
-                  className="h-full bg-brown transition-[width]"
-                  style={{ width: `${Math.round(uploadProgress * 100)}%` }}
-                />
-              ) : (
-                <div className="df-sweep absolute inset-0" />
-              )}
-            </div>
-            <p className="flex items-center justify-between gap-2 text-sm text-muted">
-              <span>
-                {uploading
-                  ? `Uploading ${Math.round(uploadProgress * 100)}%`
-                  : stage}
-              </span>
-              <span>{elapsed.toFixed(0)}s</span>
-            </p>
+          <div className="mt-4 flex items-center gap-2 text-sm text-muted">
+            <span className="df-spinner" />
+            <span>Analyzing frame by frame</span>
           </div>
         ) : (
           <div className="mt-4">
