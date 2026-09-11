@@ -186,14 +186,15 @@ export function UploadCard({
             </p>
           </div>
         ) : (
-          <Button
-            variant="primary"
-            className="mt-4 w-full"
-            disabled={!file}
-            onClick={() => file && onAnalyze(file)}
-          >
-            Run detection
-          </Button>
+          <div className="mt-4">
+            <Button
+              variant="primary"
+              disabled={!file}
+              onClick={() => file && onAnalyze(file)}
+            >
+              Run detection
+            </Button>
+          </div>
         )}
       </div>
     </Card>
