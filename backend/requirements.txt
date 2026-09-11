@@ -4,5 +4,4 @@ opencv-python>=4.8
 uvicorn[standard]>=0.29
 python-multipart>=0.0.9
 psycopg2-binary>=2.9
-pydantic-settings>=2.1
 python-dotenv>=1.0

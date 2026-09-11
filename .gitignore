@@ -22,7 +22,6 @@ machine-learning/runs/*
 !machine-learning/runs/comparison.md
 *.log
 
-# SQLite fallback used when NEON_DB_URL is unset
 backend/app.db
 
 # Next.js frontend

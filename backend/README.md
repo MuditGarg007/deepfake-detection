@@ -31,7 +31,7 @@ Copy `backend/.env.example` to `backend/.env` and fill it in:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `NEON_DB_URL` | *(unset)* | Postgres connection string (`DATABASE_URL` also accepted). When unset the server falls back to a local SQLite file at `backend/app.db` so a fresh clone runs without credentials. |
+| `NEON_DB_URL` | *(required)* | Neon Postgres connection string (`DATABASE_URL` also accepted). The server has no other database; it will not start without it. |
 | `MODEL_DIR` | `machine-learning/checkpoints` | Checkpoint directory, relative to the project root. Point it at one run (e.g. `.../efficientnet_b0_20260901_204509`); if it points at the parent, the most recently written run is loaded. |
 | `UPLOAD_DIR` | `uploads` | Where uploads are stored, relative to `backend/`. |
 | `RISK_SUSPICIOUS` | `0.4` | Below this → `REAL`. |
@@ -46,8 +46,8 @@ connection string —
 `postgresql+psycopg2://` string also works; the dialect suffix is stripped.
 
 The table is created automatically on startup; there are no migrations. All
-database access is hand-written SQL executed through sqlite3 or psycopg2 —
-there is no ORM.
+database access is hand-written SQL executed through psycopg2 — there is no
+ORM.
 
 ### 1.3 Run
 
@@ -173,8 +173,7 @@ pipeline accepts it.
 
 The stored table (`analyses`) is the schema in
 [`docs/backend-roadmap.md`](../docs/backend-roadmap.md) T4, created by the DDL
-in `backend/database.py`: `frame_scores` is `JSONB` on Postgres, plain `JSON`
-on the SQLite fallback.
+in `backend/database.py`, with `frame_scores` stored as `JSONB`.
 
 ---
 
@@ -188,19 +187,18 @@ python backend/smoke_test.py --url http://127.0.0.1:8000 \
     --real data/raw/Real/006.mp4 --fake data/raw/Deepfakes/006_002.mp4
 ```
 
-It covers both happy paths, `GET /analysis/{id}`, `/history` ordering, and every
-error case in the table above. Last run with the EfficientNet-B0 checkpoint:
-**22/22 checks passed on Postgres 16 and again on the SQLite fallback** —
-`006.mp4` → `REAL` 0.0000, `006_002.mp4` → `HIGH_RISK` 0.9733 with a
-0.0–10.2 s suspicious window, 52 frames scored each.
+It covers both happy paths, `GET /analysis/{id}`, the frame, feedback and rerun
+endpoints, `/history` ordering, and every error case in the table above. With
+the EfficientNet-B0 checkpoint: `006.mp4` → `REAL` 0.0000, `006_002.mp4` →
+`HIGH_RISK` 0.9733 with a 0.0–10.2 s suspicious window, 52 frames scored each.
 
-To exercise the Postgres path without a Neon account:
+To run against a local Postgres instead of Neon:
 
 ```bash
 docker run -d --rm --name df-pg -e POSTGRES_PASSWORD=devpass \
     -e POSTGRES_DB=deepfake -p 55432:5432 postgres:16-alpine
 # then in backend/.env:
-# NEON_DB_URL=postgresql+psycopg2://postgres:devpass@127.0.0.1:55432/deepfake
+# NEON_DB_URL=postgresql://postgres:devpass@127.0.0.1:55432/deepfake
 ```
 
 ---
