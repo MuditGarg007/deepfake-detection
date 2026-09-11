@@ -3,8 +3,7 @@
 /** `GET /history` shows the recent analyses; a row loads its full result. */
 
 import type { HistoryItem } from "@/lib/types";
-import { percent, relativeTime } from "@/lib/format";
-import { StatusDot } from "./status-badge";
+import { STATUS_LABEL, percent, relativeTime } from "@/lib/format";
 import { Card, CardHeader, ErrorNote, cx } from "./ui";
 
 export function HistoryPanel({
@@ -56,13 +55,12 @@ export function HistoryPanel({
                   item.id === activeId ? "bg-sunken" : "hover:bg-surface",
                 )}
               >
-                <StatusDot status={item.status} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">
                     {item.filename}
                   </span>
                   <span className="block text-xs text-muted">
-                    {relativeTime(item.created_at)}
+                    {STATUS_LABEL[item.status]}, {relativeTime(item.created_at)}
                     {item.has_video ? ", video saved" : ""}
                   </span>
                 </span>
