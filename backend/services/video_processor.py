@@ -123,6 +123,26 @@ def _crop_face(frame, box: tuple[float, float, float, float]) -> object:
     return frame[y1:y2, x1:x2]
 
 
+def grab_frame_jpeg(path: Path, timestamp: float, quality: int = 85) -> bytes | None:
+    """Return the frame nearest ``timestamp`` as JPEG bytes, or None if unreadable.
+
+    Scored frames are held in memory during ``process_video`` and never written
+    to disk, so showing one afterwards means seeking the source video again.
+    """
+    cap = cv2.VideoCapture(str(path))
+    try:
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        if fps > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, round(timestamp * fps))
+        ok, frame = cap.read()
+        if not ok:
+            return None
+        encoded, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+        return buffer.tobytes() if encoded else None
+    finally:
+        cap.release()
+
+
 @dataclass
 class FrameScore:
     timestamp: float
