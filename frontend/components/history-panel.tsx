@@ -3,7 +3,7 @@
 /** `GET /history` shows the recent analyses; a row loads its full result. */
 
 import type { HistoryItem } from "@/lib/types";
-import { STATUS_LABEL, percent, relativeTime } from "@/lib/format";
+import { STATUS_LABEL, relativeTime } from "@/lib/format";
 import { Card, CardHeader, ErrorNote, cx } from "./ui";
 
 export function HistoryPanel({
@@ -60,12 +60,12 @@ export function HistoryPanel({
                     {item.filename}
                   </span>
                   <span className="block text-xs text-muted">
-                    {STATUS_LABEL[item.status]}, {relativeTime(item.created_at)}
+                    {relativeTime(item.created_at)}
                     {item.has_video ? ", video saved" : ""}
                   </span>
                 </span>
-                <span className="text-sm font-medium text-brown">
-                  {percent(item.fake_probability, 0)}
+                <span className="shrink-0 text-sm font-medium text-brown">
+                  {STATUS_LABEL[item.status]}
                 </span>
               </button>
             </li>
