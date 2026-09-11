@@ -102,7 +102,7 @@ export function UploadCard({
         </div>
 
         <p className="mt-2 text-sm text-muted">
-          {ACCEPTED.join(", ")} up to {MAX_MB} MB
+          Upload a video for deepfake detection
         </p>
 
         {localError ? (
