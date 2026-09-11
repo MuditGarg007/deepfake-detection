@@ -44,18 +44,18 @@ input,
   outline-color: var(--brown);
 }
 
-/* Loading bar shown while the backend runs the pipeline. */
-@keyframes df-sweep {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(400%); }
+/* Spinner shown while the backend runs the pipeline. */
+@keyframes df-spin {
+  to { transform: rotate(360deg); }
 }
-.df-sweep::after {
-  content: "";
-  position: absolute;
-  inset-block: 0;
-  width: 25%;
-  background: var(--brown);
-  animation: df-sweep 1.4s linear infinite;
+.df-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--brown);
+  border-radius: 50%;
+  animation: df-spin 0.8s linear infinite;
 }
 
 @keyframes df-pulse {
@@ -65,5 +65,5 @@ input,
 .df-pulse { animation: df-pulse 1.5s ease-in-out infinite; }
 
 @media (prefers-reduced-motion: reduce) {
-  .df-sweep::after, .df-pulse { animation: none; }
+  .df-spinner, .df-pulse { animation: none; }
 }

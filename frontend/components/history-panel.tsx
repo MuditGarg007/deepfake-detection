@@ -1,6 +1,5 @@
 "use client";
 
-/** `GET /history` shows the recent analyses; a row loads its full result. */
 
 import type { HistoryItem } from "@/lib/types";
 import { STATUS_LABEL, relativeTime } from "@/lib/format";
