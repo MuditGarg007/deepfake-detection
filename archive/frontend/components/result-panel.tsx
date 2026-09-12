@@ -76,7 +76,7 @@ export function ResultPanel({
             src={frameUrl(analysis.id)}
             alt="The most suspicious frame of this video"
             onError={() => setFrameFailedFor(analysis.id)}
-            className="mb-4 block max-h-80 w-full rounded border border-line object-contain"
+            className="mb-4 block max-h-80 w-full border border-line object-contain"
           />
         ) : null}
 

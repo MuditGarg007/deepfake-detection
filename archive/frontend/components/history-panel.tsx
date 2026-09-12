@@ -33,7 +33,7 @@ export function HistoryPanel({
         <ul className="divide-y divide-line">
           {[0, 1, 2, 3].map((row) => (
             <li key={row} className="flex items-center gap-3 px-4 py-3">
-              <span className="df-pulse h-4 flex-1 rounded bg-sunken" />
+              <span className="df-pulse h-4 flex-1 bg-sunken" />
             </li>
           ))}
         </ul>
