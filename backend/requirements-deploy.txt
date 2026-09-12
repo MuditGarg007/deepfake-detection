@@ -1,12 +1,12 @@
-# Deployment dependencies (Hugging Face Space, Dockerfile at the repo root).
+# Deployment dependencies (Cloud Run).
 #
 # Separate from requirements.txt because deployment needs the CPU-only torch
 # wheels: the default PyPI wheels bundle CUDA and pull ~2.5 GB of nvidia-*
-# packages that a CPU Space can never use.
+# packages that a CPU host can never use.
 #
 # facenet-pytorch is NOT listed here. Its metadata pins torchvision<0.18, which
-# conflicts with the wheels below, so the Dockerfile installs it with --no-deps
-# (same workaround as machine-learning/requirements.txt).
+# conflicts with the wheels below, so it has to be installed separately with
+# --no-deps (same workaround as machine-learning/requirements.txt).
 
 --extra-index-url https://download.pytorch.org/whl/cpu
 

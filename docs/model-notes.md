@@ -369,14 +369,14 @@ case the most recently written run is auto-selected. The deployment pins
   the 200 MB cap); deleted on failure, kept on success so the video can be
   replayed. On serverless deployments the filesystem is ephemeral, so stored
   videos may not survive restarts — `has_video` reflects that.
-- **Container image** (repo-root Dockerfile): installs **CPU-only** torch
-  (`torch==2.6.0+cpu` from the PyTorch CPU index — the model runs fine on CPU,
-  just slower), pins pandas (the ML dataset module imports it at module
-  level), and installs `facenet-pytorch` with `--no-deps` because its package
-  metadata pins an old `torchvision` that conflicts with the current wheels
-  (the MTCNN code itself is compatible). Runs as uid 1000; the command is
-  `uvicorn backend.main:app --port ${PORT:-7860}`, which honors the platform's
-  injected port (e.g. 8080 on Cloud Run, 7860 on Hugging Face Spaces).
+- **Deployment dependencies** (`backend/requirements-deploy.txt`): **CPU-only**
+  torch (`torch==2.6.0+cpu` from the PyTorch CPU index — the model runs fine on
+  CPU, just slower), pinned pandas (the ML dataset module imports it at module
+  level), and `facenet-pytorch` installed separately with `--no-deps` because
+  its package metadata pins an old `torchvision` that conflicts with the
+  current wheels (the MTCNN code itself is compatible). The service is started
+  from the repo root as `uvicorn backend.main:app --port ${PORT:-8000}`, which
+  honors the platform's injected port (e.g. 8080 on Cloud Run).
 - **Dev launcher**: a repo-root script creates a `.venv`, installs
   dependencies, starts the backend on :8000 and the frontend dev server on
   :3000 (auto-stepping busy ports), polls `/health` until ready, and tees

@@ -1,13 +1,3 @@
----
-title: Deepfake Detection API
-emoji: 🎭
-colorFrom: indigo
-colorTo: red
-sdk: docker
-app_port: 7860
-pinned: false
----
-
 # Deepfake Detection & Alert System
 
 Upload a video, get a frame-by-frame fake probability, an overall risk status,
@@ -27,6 +17,5 @@ and the most suspicious region of the clip.
 
 ## Deployment
 
-The backend runs as a Docker Space on Hugging Face (this file's front matter
-configures it) and the frontend on Vercel. `docs/deployment.md` has the full
-walkthrough.
+The backend runs on Google Cloud Run and the frontend on Vercel.
+`docs/deployment.md` has the full walkthrough.
