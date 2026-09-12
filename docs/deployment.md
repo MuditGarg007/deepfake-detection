@@ -4,7 +4,7 @@ The app is split across three tiers:
 
 | Piece | Host | Why |
 | --- | --- | --- |
-| `backend/` + `machine-learning/` | Google Cloud Run | takes the Docker image directly, and 2 GiB fits the model |
+| `backend/` + `machine-learning/` | Google Cloud Run | 2 GiB fits the model, and scale-to-zero keeps it free |
 | `frontend/` | Vercel | Next.js, zero-config |
 | Postgres | Neon | Cloud Run's filesystem is ephemeral, so SQLite would not survive |
 
@@ -14,25 +14,21 @@ Vercel.
 
 ## Why not Hugging Face Spaces
 
-The Space configuration in this repo (`README.md` front matter, `app_port`)
-still works, but a Docker Space is **not free**. Per the Hub docs: "Static
-Spaces are free for everyone. Gradio and Docker Spaces run on compute and
-require a paid plan to create: PRO for personal accounts, Team or Enterprise
-for organizations." The "CPU Basic — FREE" row in the pricing table is the
-*hardware* rate; creating a compute Space is gated separately. PRO is $9/month
-and is a perfectly good option if you want 16 GB and rare cold starts — the
-image and front matter here are ready for it either way.
+A compute Space is **not free**. Per the Hub docs: "Static Spaces are free for
+everyone. Gradio and Docker Spaces run on compute and require a paid plan to
+create: PRO for personal accounts, Team or Enterprise for organizations." The
+"CPU Basic — FREE" row in the pricing table is the *hardware* rate; creating a
+compute Space is gated separately.
 
 Render's free tier is not an option: it caps at 512 MB, and this service
 measures ~605 MB RSS with the checkpoint loaded.
 
 ## Sizing
 
-Measured by building the image and running it locally:
+Measured by running the service locally:
 
 - ~605 MB RSS with the checkpoint loaded and one analysis done.
 - An 11-second clip scored 56 frames in 2.7 s on 16 cores.
-- Image is ~420 MB compressed, ~1.8 GB unpacked.
 
 So `--memory 2Gi --cpu 2` leaves real headroom without wasting allowance.
 
@@ -98,8 +94,11 @@ gcloud run deploy deepfake-api \
   --set-env-vars "DATABASE_URL=postgresql+psycopg2://..."
 ```
 
-`--source .` builds with Cloud Build; the Dockerfile at the repo root is used
-as-is. `MODEL_DIR` and `UPLOAD_DIR` are already baked into the image.
+`--source .` builds with Cloud Build. The repo no longer carries a container
+build of its own, so Cloud Build falls back to its Python buildpack — set
+`MODEL_DIR` and `UPLOAD_DIR` explicitly with `--set-env-vars`, and confirm the
+buildpack picks up `backend/requirements-deploy.txt` (the CPU-only torch
+wheels) rather than a CUDA build.
 
 For a secret you would rather not have in shell history, put it in Secret
 Manager and swap the last line for
@@ -117,7 +116,7 @@ every frame would score a flat 0.5 — check step 2.
 
 ### 4. Keep-warm ping
 
-Cloud Run scales to zero, and a cold request pays for the image pull, the
+Cloud Run scales to zero, and a cold request pays for the container start, the
 torch import, and loading the checkpoint. A scheduled ping to `/health` keeps
 an instance warm for a negligible slice of the free tier.
 
@@ -168,9 +167,6 @@ too.
 
 ## What the deployment files do
 
-- `Dockerfile` — builds from the repo root, because the detector imports
-  `machine-learning/inference.py` by a path relative to the project root.
-  The command honors `$PORT` (Cloud Run injects 8080) and falls back to 7860.
 - `backend/requirements-deploy.txt` — the same dependencies as
   `backend/requirements.txt` but resolved against PyTorch's CPU wheel index.
   The default PyPI `torch` bundles CUDA and drags in ~2.5 GB of `nvidia-*`
@@ -180,16 +176,21 @@ too.
   `build_transform`, and without it the detector falls back to stub mode.
 - No system `ffmpeg`: `opencv-python-headless` bundles its own, and installing
   it added ~150 packages for nothing.
-- `.dockerignore` — keeps the frontend, the datasets, the Xception checkpoint,
-  and local secrets out of the image.
 - `.gitattributes` — routes `*.pth` through Git LFS.
-- `README.md` front matter — Hugging Face Space config, unused on Cloud Run.
+
+The app must be started from the repo root — the detector imports
+`machine-learning/inference.py` by a path relative to the project root — and
+the command has to honor `$PORT` (Cloud Run injects 8080):
+
+```bash
+uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}
+```
 
 ## Operating notes
 
 - **Cold starts.** Scaling to zero means the first request after an idle
-  period pays for the image pull plus loading the checkpoint. The keep-warm
-  ping above is the mitigation.
+  period pays for the container start plus loading the checkpoint. The
+  keep-warm ping above is the mitigation.
 - **Ephemeral disk.** Uploaded videos live in `UPLOAD_DIR` inside the
   container and are gone when the instance is replaced. Analysis rows survive
   in Neon; `Analysis.has_video` turns false and the UI drops the player.
@@ -202,14 +203,17 @@ too.
   consume the allowance. `MAX_UPLOAD_MB` and `--max-instances` are the only
   limits in place.
 
-## Testing the image locally
+## Testing the deployment build locally
 
 ```bash
-docker build -t deepfake-api .
-docker run --rm -p 7860:7860 deepfake-api
-curl localhost:7860/health
-curl -X POST localhost:7860/analyze -F "file=@some-clip.mp4"
+python -m venv .venv-deploy && . .venv-deploy/bin/activate
+pip install -r backend/requirements-deploy.txt
+pip install --no-deps "facenet-pytorch>=2.6"
+MODEL_DIR=machine-learning/checkpoints/efficientnet_b0_20260901_204509 \
+    uvicorn backend.main:app --port 8000
+curl localhost:8000/health
+curl -X POST localhost:8000/analyze -F "file=@some-clip.mp4"
 ```
 
-With no `DATABASE_URL` it falls back to SQLite inside the container, which is
-enough to check that the model loads and the routes answer.
+With no `DATABASE_URL` it falls back to SQLite, which is enough to check that
+the model loads and the routes answer.

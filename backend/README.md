@@ -192,13 +192,12 @@ endpoints, `/history` ordering, and every error case in the table above. With
 the EfficientNet-B0 checkpoint: `006.mp4` → `REAL` 0.0000, `006_002.mp4` →
 `HIGH_RISK` 0.9733 with a 0.0–10.2 s suspicious window, 52 frames scored each.
 
-To run against a local Postgres instead of Neon:
+To run against a local Postgres instead of Neon, start one on port 55432 with
+a `deepfake` database, then point `backend/.env` at it:
 
 ```bash
-docker run -d --rm --name df-pg -e POSTGRES_PASSWORD=devpass \
-    -e POSTGRES_DB=deepfake -p 55432:5432 postgres:16-alpine
-# then in backend/.env:
-# NEON_DB_URL=postgresql://postgres:devpass@127.0.0.1:55432/deepfake
+# backend/.env
+NEON_DB_URL=postgresql://postgres:devpass@127.0.0.1:55432/deepfake
 ```
 
 ---
