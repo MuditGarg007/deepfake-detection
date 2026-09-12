@@ -14,7 +14,7 @@ export function Card({
   return (
     <section
       {...props}
-      className={cx("rounded-lg border border-line bg-background", className)}
+      className={cx("border border-line bg-background", className)}
     >
       {children}
     </section>
@@ -70,7 +70,7 @@ export function Button({
     <button
       {...props}
       className={cx(
-        "inline-flex items-center justify-center gap-2 rounded-md font-medium",
+        "inline-flex items-center justify-center gap-2 font-medium",
         "transition-colors disabled:cursor-not-allowed",
         size === "sm" ? "h-8 px-3 text-sm" : "h-10 px-4 text-base",
         VARIANTS[variant],
@@ -85,7 +85,7 @@ export function ErrorNote({ children }: { children: ReactNode }) {
   return (
     <p
       role="alert"
-      className="rounded-md border border-line-strong bg-surface px-3 py-2 text-sm leading-relaxed text-foreground"
+      className="border border-line-strong bg-surface px-3 py-2 text-sm leading-relaxed text-foreground"
     >
       {children}
     </p>

@@ -86,7 +86,7 @@ export function Detector() {
     <div className="flex min-h-full flex-1 flex-col">
       <header className="border-b border-line bg-surface">
         <div className="mx-auto w-full max-w-3xl px-6 py-4">
-          <h1 className="text-lg font-bold text-brown">
+          <h1 className="text-center text-lg font-bold text-brown">
             Deepfake Detection &amp; Alert System
           </h1>
         </div>
