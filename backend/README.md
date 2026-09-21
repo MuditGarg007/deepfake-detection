@@ -73,7 +73,12 @@ which mode is active via `model_loaded`.
 | `POST` | `/analyze` | Upload a video, get the full analysis (201) |
 | `GET` | `/analysis/{id}` | One stored analysis |
 | `GET` | `/analysis/{id}/video` | The source video, for playback in the UI |
-| `GET` | `/history` | Recent analyses, newest first (`?limit=`, default 100, max 500) |
+| `GET` | `/history` | Recent analyses and live sessions, newest first (`?limit=`, default 100, max 500) |
+| `POST` | `/live/start` | Open a live screen-share session (201) |
+| `POST` | `/live/{session}/frame` | Score one JPEG into a session, get the smoothed verdict |
+| `POST` | `/live/{session}/stop` | Finalise a session and store its summary row |
+| `GET` | `/live/sessions/{id}` | One stored live session |
+| `POST` | `/live/frame` | Score one JPEG, stateless — no session, no smoothing |
 
 ### `GET /health`
 
@@ -143,16 +148,54 @@ pipeline accepts it.
 
 ### `GET /history`
 
+Uploads and live sessions come from two tables and are unioned into one stream,
+so ids are only unique **within** a kind — anything that follows a row has to
+carry `kind` with it.
+
 ```json
 [
-  {"id": 2, "filename": "006_002.mp4", "fake_probability": 0.9733,
+  {"id": 3, "kind": "live", "filename": "Live screen share",
+   "fake_probability": 0.9911, "status": "HIGH_RISK",
+   "created_at": "2026-09-18T06:42:33.565242Z", "has_video": false},
+  {"id": 2, "kind": "upload", "filename": "006_002.mp4", "fake_probability": 0.9733,
    "status": "HIGH_RISK", "created_at": "2026-09-01T16:52:36.859098Z",
-   "has_video": true},
-  {"id": 1, "filename": "006.mp4", "fake_probability": 0.0,
-   "status": "REAL", "created_at": "2026-09-01T16:52:32.719001Z",
    "has_video": true}
 ]
 ```
+
+### Live screen share
+
+The browser opens a session, posts a 640 px JPEG about twice a second, and
+stops. Frames live in memory for the length of a request — nothing is written
+to `UPLOAD_DIR` and the bytes never reach the log — and the stored row holds
+scores, never images.
+
+```bash
+SESSION=$(curl -sX POST http://localhost:8000/live/start | jq -r .session_id)
+curl -X POST "http://localhost:8000/live/$SESSION/frame" \
+     -H "Content-Type: image/jpeg" --data-binary @frame.jpg
+curl -X POST "http://localhost:8000/live/$SESSION/stop"
+```
+
+A frame reply carries the raw score, the EMA the badge reads, and the last
+60 seconds of smoothed scores for the sparkline:
+
+```json
+{"face_found": true, "fake_probability": 0.9922, "smoothed": 0.9911,
+ "status": "HIGH_RISK", "frames_scored": 22, "frames_received": 22,
+ "dropped": false, "recent": [{"timestamp": 22.4, "fake_probability": 0.9911}]}
+```
+
+`dropped: true` means the session was still scoring the previous frame, so this
+one was discarded rather than queued and the body repeats the standing verdict.
+`/stop` returns the stored `live_sessions` row, or 422 if no face was ever
+scored — there is then nothing worth recording. Sessions are process-local and
+are reaped after `LIVE_SESSION_TTL` seconds of silence, so an abandoned tab
+cannot leak; a multi-instance deployment needs session affinity.
+
+JPEG quality is not a free knob: the classifier reads a known fake as REAL
+below about 0.85, so the capture path uses 0.95. See §9 of
+[`docs/live-screenshare-refactor.md`](../docs/live-screenshare-refactor.md).
 
 ---
 
@@ -171,7 +214,15 @@ pipeline accepts it.
    `detector.predict_batch`.
 5. Aggregate to the mean, derive the status and the suspicious region, persist.
 
-The stored table (`analyses`) is the schema in
+The live path reuses the middle of that: `detect_box` + `crop_face` +
+`detector.predict` per frame, with MTCNN run only every `LIVE_DETECT_EVERY`
+frames and the box reused in between (detection is 2.3× the cost of the rest).
+Both paths read the same `RISK_SUSPICIOUS` / `RISK_HIGH` thresholds, so an
+upload verdict and a live verdict mean the same thing; only the live badge's
+*exit* from a state is sticky, by `RISK_HYSTERESIS`, so a score sitting on a
+threshold cannot make it strobe.
+
+The stored tables (`analyses` and `live_sessions`) are the schema in
 [`docs/backend-roadmap.md`](../docs/backend-roadmap.md) T4, created by the DDL
 in `backend/database.py`, with `frame_scores` stored as `JSONB`.
 
@@ -188,7 +239,8 @@ python backend/smoke_test.py --url http://127.0.0.1:8000 \
 ```
 
 It covers both happy paths, `GET /analysis/{id}`, the frame, feedback and rerun
-endpoints, `/history` ordering, and every error case in the table above. With
+endpoints, a full live session (start, frames, stop, read-back), `/history`
+ordering across both kinds, and every error case in the table above. With
 the EfficientNet-B0 checkpoint: `006.mp4` → `REAL` 0.0000, `006_002.mp4` →
 `HIGH_RISK` 0.9733 with a 0.0–10.2 s suspicious window, 52 frames scored each.
 

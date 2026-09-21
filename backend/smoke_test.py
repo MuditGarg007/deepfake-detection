@@ -35,6 +35,87 @@ def write_faceless_video(path):
     return path
 
 
+def first_face_jpeg(path, width=640, quality=95):
+    """Re-encode one frame of a video the way the browser capture path does."""
+    import cv2
+
+    capture = cv2.VideoCapture(str(path))
+    try:
+        ok, frame = capture.read()
+        if not ok:
+            return None
+    finally:
+        capture.release()
+
+    # The quality matters: the classifier is sensitive to JPEG artifacts and
+    # reads a known fake as REAL below about 0.85. See section 9 of
+    # docs/live-screenshare-refactor.md.
+    scale = width / frame.shape[1]
+    resized = cv2.resize(frame, (width, round(frame.shape[0] * scale)))
+    encoded, buffer = cv2.imencode(".jpg", resized, [cv2.IMWRITE_JPEG_QUALITY, quality])
+    return buffer.tobytes() if encoded else None
+
+
+def live_session(client, video, frames=6):
+    """Run a short live session end to end and return the stored summary row."""
+    jpeg = first_face_jpeg(video)
+    if jpeg is None:
+        check(False, "could not build a JPEG frame for the live path")
+        return None
+
+    response = client.post("/live/frame", content=jpeg, headers={"Content-Type": "image/jpeg"})
+    check(response.status_code == 200, f"POST /live/frame -> {response.status_code}")
+    stateless = response.json() if response.status_code == 200 else {}
+    check(stateless.get("face_found") is True, "stateless live frame found a face")
+    if stateless.get("face_found"):
+        print(f"      live frame: prob={stateless['fake_probability']} status={stateless['status']}")
+        check(stateless["fake_probability"] > 0.5, "fake still scores above 0.5")
+
+    response = client.post("/live/start")
+    check(response.status_code == 201, f"POST /live/start -> {response.status_code}")
+    if response.status_code != 201:
+        return None
+    session_id = response.json()["session_id"]
+
+    verdict = {}
+    for _ in range(frames):
+        response = client.post(
+            f"/live/{session_id}/frame",
+            content=jpeg,
+            headers={"Content-Type": "image/jpeg"},
+        )
+        if response.status_code != 200:
+            check(False, f"POST /live/{{id}}/frame -> {response.status_code}")
+            return None
+        verdict = response.json()
+
+    check(verdict.get("frames_scored") == frames, f"session scored {verdict.get('frames_scored')} frames")
+    check(verdict.get("smoothed") is not None, "session returns a smoothed score")
+    check(len(verdict.get("recent", [])) == frames, "session returns its recent window")
+
+    response = client.post(f"/live/{session_id}/stop")
+    check(response.status_code == 200, f"POST /live/{{id}}/stop -> {response.status_code}")
+    if response.status_code != 200:
+        return None
+    summary = response.json()
+    print(f"      live: prob={summary['mean_probability']} status={summary['status']}")
+    check(summary["frames_scored"] == frames, "summary counts every scored frame")
+    check(len(summary["timeline"]) == frames, "summary timeline holds one point per frame")
+    check(summary["status"] == "HIGH_RISK", f"live fake sample classified {summary['status']}")
+
+    response = client.post(f"/live/{session_id}/stop")
+    check(response.status_code == 404, f"second stop -> {response.status_code} (want 404)")
+
+    response = client.get(f"/live/sessions/{summary['id']}")
+    check(response.status_code == 200, f"GET /live/sessions/{summary['id']} -> {response.status_code}")
+    check(response.json() == summary, "stored session matches the stop response")
+
+    response = client.post("/live/nosuchsession/frame", content=jpeg)
+    check(response.status_code == 404, f"frame for unknown session -> {response.status_code} (want 404)")
+
+    return summary
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", default="http://127.0.0.1:8000")
@@ -116,15 +197,23 @@ def main():
             "rerun returns the same verdict",
         )
 
+    live = live_session(client, args.fake)
+
     response = client.get("/history")
     check(response.status_code == 200, f"GET /history -> {response.status_code}")
     rows = response.json()
-    check(len(rows) >= 2, f"history has both rows ({len(rows)} total)")
-    if len(rows) >= 2 and fake and real:
-        check(rows[0]["id"] == fake["id"], "history is newest first")
+    uploads = [row for row in rows if row["kind"] == "upload"]
+    check(len(uploads) >= 2, f"history has both uploads ({len(uploads)} of {len(rows)})")
+    if len(uploads) >= 2 and fake and real:
+        check(uploads[0]["id"] == fake["id"], "history is newest first")
         check(
-            {real["id"], fake["id"]} <= {row["id"] for row in rows},
+            {real["id"], fake["id"]} <= {row["id"] for row in uploads},
             "history contains both uploads",
+        )
+    if live:
+        check(
+            any(row["kind"] == "live" and row["id"] == live["id"] for row in rows),
+            "history contains the live session",
         )
 
     with tempfile.TemporaryDirectory() as tmp:
