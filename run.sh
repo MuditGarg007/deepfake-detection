@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# Run the whole app — Phase 4 backend + Phase 5 frontend — with one command.
+# Run the whole app — FastAPI backend + Streamlit frontend — with one command.
 #
-#   ./run.sh                          # backend on 8000, frontend on 3000
-#   ./run.sh --backend-port 8010 --frontend-port 3010
-#   ./run.sh --skip-install           # never touch .venv / node_modules
+#   ./run.sh                          # backend on 8000, frontend on 8501
+#   ./run.sh --backend-port 8010 --frontend-port 8510
+#   ./run.sh --skip-install           # never touch .venv
 #
 # Busy ports are stepped past automatically, the frontend is pointed at whatever
 # port the backend actually got, and Ctrl-C stops both.
@@ -15,7 +15,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
 BACKEND_PORT=8000
-FRONTEND_PORT=3000
+FRONTEND_PORT=8501
 SKIP_INSTALL=0
 LOG_DIR="$ROOT/logs"
 
@@ -55,8 +55,6 @@ FRONTEND_PORT="$(free_port "$FRONTEND_PORT")"
 
 # --- dependencies ------------------------------------------------------------
 
-command -v npm >/dev/null || die "npm not found — install Node 18+ first"
-
 if [[ ! -d .venv ]]; then
   [[ $SKIP_INSTALL == 1 ]] && die ".venv is missing and --skip-install was passed"
   say "creating .venv"
@@ -71,10 +69,10 @@ if ! "$PYTHON" -c "import uvicorn, fastapi, cv2, torch" >/dev/null 2>&1; then
   "$PYTHON" -m pip install --quiet -r backend/requirements.txt
 fi
 
-if [[ ! -d frontend/node_modules ]]; then
-  [[ $SKIP_INSTALL == 1 ]] && die "frontend/node_modules is missing and --skip-install was passed"
+if ! "$PYTHON" -c "import streamlit" >/dev/null 2>&1; then
+  [[ $SKIP_INSTALL == 1 ]] && die "streamlit is missing and --skip-install was passed"
   say "installing frontend dependencies"
-  (cd frontend && npm install --silent)
+  "$PYTHON" -m pip install --quiet -r streamlit-frontend/requirements.txt
 fi
 
 if [[ ! -f backend/.env ]]; then
@@ -86,10 +84,8 @@ mkdir -p "$LOG_DIR"
 
 # --- start both --------------------------------------------------------------
 
-# Env beats backend/.env, so CORS follows the real port.
-export CORS_ORIGINS="http://localhost:$FRONTEND_PORT,http://127.0.0.1:$FRONTEND_PORT"
-# Next inlines NEXT_PUBLIC_* from the environment, so no .env.local edit needed.
-export NEXT_PUBLIC_API_URL="http://localhost:$BACKEND_PORT"
+# Streamlit calls the API server-side, so it only needs the address.
+export API_URL="http://localhost:$BACKEND_PORT"
 
 BACKEND_PID=""
 FRONTEND_PID=""
@@ -124,13 +120,14 @@ case "$HEALTH" in
 esac
 
 say "starting frontend on :$FRONTEND_PORT"
-(cd frontend && npm run dev -- --port "$FRONTEND_PORT") \
+"$PYTHON" -m streamlit run streamlit-frontend/app.py \
+  --server.port "$FRONTEND_PORT" --server.headless true \
   > >(tee -a "$LOG_DIR/frontend.log" | sed -u 's/^/\x1b[2m[web]\x1b[0m /') 2>&1 &
 FRONTEND_PID=$!
 
 for i in $(seq 60); do
   kill -0 "$FRONTEND_PID" 2>/dev/null || die "frontend exited — see $LOG_DIR/frontend.log"
-  curl -sf -o /dev/null "http://127.0.0.1:$FRONTEND_PORT" && break
+  curl -sf -o /dev/null "http://127.0.0.1:$FRONTEND_PORT/_stcore/health" && break
   sleep 1
 done
 

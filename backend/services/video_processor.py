@@ -90,6 +90,34 @@ def crop_face(frame, box):
     return frame[y1:y2, x1:x2]
 
 
+def detect_box(rgb, face_detector=None):
+    """Return the box of the largest confident face in one RGB frame, or None.
+
+    Split out from detect_face so the live path can hold on to a box and reuse
+    it for a few frames instead of running MTCNN on every one.
+    """
+    face_detector = face_detector or get_mtcnn()
+    boxes, probs = face_detector.detect(rgb)
+    if boxes is None or len(boxes) == 0:
+        return None
+    best = largest_face(boxes, probs)
+    if best is None:
+        return None
+    return boxes[best]
+
+
+def detect_face(rgb, face_detector=None):
+    """Return the largest confident face crop in one RGB frame, or None.
+
+    Shared by the whole-video path, which batches the crops it collects, and
+    by score_frame, which has exactly one frame to work with.
+    """
+    box = detect_box(rgb, face_detector)
+    if box is None:
+        return None
+    return crop_face(rgb, box)
+
+
 def grab_frame_jpeg(path, timestamp, quality=85):
     cap = cv2.VideoCapture(str(path))
     try:
@@ -146,24 +174,41 @@ def suspicious_region(scores):
     return best[0].timestamp, best[-1].timestamp
 
 
+def score_frame(rgb, timestamp=0.0, face_detector=None):
+    """Detect the largest face in one RGB frame and score it.
+
+    Returns None when no face clears FACE_CONF.
+    """
+    crop = detect_face(rgb, face_detector)
+    if crop is None:
+        return None
+    return FrameScore(timestamp, round(detector.predict(crop), 4))
+
+
+def aggregate(scores):
+    """Mean probability, risk status and suspicious region for a run of frames."""
+    fake_probability = sum(score.fake_probability for score in scores) / len(scores)
+    start, end = suspicious_region(scores)
+    return round(fake_probability, 4), risk_status(fake_probability), start, end
+
+
 def process_video(path, filename=None):
     frames = extract_frames(path)
     if not frames:
         raise UnreadableVideoError("video contains no readable frames")
 
+    # Detection is per frame, but scoring stays batched - predict_batch is
+    # meaningfully faster than one call per crop.
     face_detector = get_mtcnn()
     timestamps = []
     crops = []
     for timestamp, frame in frames:
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        boxes, probs = face_detector.detect(rgb)
-        if boxes is None or len(boxes) == 0:
-            continue
-        best = largest_face(boxes, probs)
-        if best is None:
+        crop = detect_face(rgb, face_detector)
+        if crop is None:
             continue
         timestamps.append(timestamp)
-        crops.append(crop_face(rgb, boxes[best]))
+        crops.append(crop)
 
     if not crops:
         raise NoFacesError("no faces detected in any frame")
@@ -173,12 +218,11 @@ def process_video(path, filename=None):
         FrameScore(t, round(p, 4)) for t, p in zip(timestamps, probabilities)
     ]
 
-    fake_probability = sum(s.fake_probability for s in scores) / len(scores)
-    start, end = suspicious_region(scores)
+    fake_probability, status, start, end = aggregate(scores)
     return VideoResult(
         filename=filename or Path(path).name,
-        fake_probability=round(fake_probability, 4),
-        status=risk_status(fake_probability),
+        fake_probability=fake_probability,
+        status=status,
         suspicious_start=start,
         suspicious_end=end,
         frame_scores=scores,

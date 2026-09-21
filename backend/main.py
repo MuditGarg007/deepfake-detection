@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import config
 from .database import init_schema
-from .routes import analyze, history
+from .routes import analyze, history, live
 from .services import detector
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -32,6 +32,7 @@ app.add_middleware(
 
 app.include_router(analyze.router)
 app.include_router(history.router)
+app.include_router(live.router)
 
 
 @app.get("/health", tags=["meta"])

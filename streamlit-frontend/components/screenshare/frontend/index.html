@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Screen share</title>
+<style>
+  :root {
+    --bg: transparent;
+    --fg: #31333f;
+    --muted: #6b6f7b;
+    --border: rgba(49, 51, 63, 0.2);
+    --panel: rgba(49, 51, 63, 0.05);
+    --real: #1b7f4d;
+    --suspicious: #a86a00;
+    --high: #b3261e;
+    --none: #6b6f7b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "Source Sans Pro", -apple-system, system-ui, sans-serif;
+    font-size: 15px;
+  }
+  .consent {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .consent b { color: var(--fg); }
+  .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  button {
+    font: inherit;
+    font-weight: 600;
+    padding: 6px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--fg);
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--fg); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  .badge {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid currentColor;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--none);
+  }
+  .badge .prob { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .badge[data-status="REAL"] { color: var(--real); }
+  .badge[data-status="SUSPICIOUS"] { color: var(--suspicious); }
+  .badge[data-status="HIGH_RISK"] { color: var(--high); }
+  .stats {
+    margin-top: 10px;
+    color: var(--muted);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+  .error { margin-top: 10px; color: var(--high); font-size: 13px; }
+  .spark {
+    margin-top: 10px;
+    display: none;
+    width: 100%;
+    max-width: 420px;
+    height: 56px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .spark.on { display: block; }
+  .spark .line { fill: none; stroke: currentColor; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .spark .rule { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .spark[data-status="REAL"] { color: var(--real); }
+  .spark[data-status="SUSPICIOUS"] { color: var(--suspicious); }
+  .spark[data-status="HIGH_RISK"] { color: var(--high); }
+  .preview {
+    margin-top: 12px;
+    display: none;
+    max-width: 320px;
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .preview.on { display: block; }
+  canvas { display: none; }
+</style>
+</head>
+<body>
+  <div class="consent">
+    <b>What leaves this machine.</b> While the share is running, a still frame of
+    the shared surface is captured about twice a second, sent to the detection
+    backend, scored, and dropped. Frames are never recorded or stored — only the
+    scores are. Prefer sharing a single tab or window rather than your whole
+    screen: it narrows what can be captured by accident.
+  </div>
+
+  <div class="controls">
+    <button id="start">Share a screen</button>
+    <button id="stop" disabled>Stop</button>
+    <span class="badge" id="badge" data-status="">
+      <span id="status">IDLE</span>
+      <span class="prob" id="prob"></span>
+    </span>
+  </div>
+
+  <svg class="spark" id="spark" viewBox="0 0 120 1" preserveAspectRatio="none" aria-hidden="true">
+    <line class="rule" id="ruleSuspicious" x1="0" x2="120" />
+    <line class="rule" id="ruleHigh" x1="0" x2="120" />
+    <polyline class="line" id="sparkLine" points="" />
+  </svg>
+  <div class="stats" id="stats"></div>
+  <div class="error" id="error"></div>
+  <video class="preview" id="preview" muted playsinline></video>
+  <canvas id="canvas"></canvas>
+
+<script>
+"use strict";
+
+// --- Streamlit component protocol -------------------------------------------
+
+function send(message) {
+  window.parent.postMessage(Object.assign({ isStreamlitMessage: true }, message), "*");
+}
+
+function setFrameHeight() {
+  // documentElement.scrollHeight is the iframe's own height, which only ever
+  // ratchets up; the body is what actually measures the content.
+  send({ type: "streamlit:setFrameHeight", height: Math.ceil(document.body.scrollHeight) });
+}
+
+function setComponentValue(value) {
+  send({ type: "streamlit:setComponentValue", value: value, dataType: "json" });
+}
+
+// --- configuration, filled in by the first render message --------------------
+
+var config = {
+  api_url: "",
+  interval_ms: 500,
+  capture_width: 640,
+  jpeg_quality: 0.95,
+  risk_suspicious: 0.4,
+  risk_high: 0.7,
+};
+
+var configured = false;
+
+function applyTheme(theme) {
+  if (!theme) return;
+  var root = document.documentElement.style;
+  if (theme.textColor) {
+    root.setProperty("--fg", theme.textColor);
+    root.setProperty("--muted", theme.fadedText60 || theme.textColor);
+  }
+  if (theme.base === "dark") {
+    root.setProperty("--border", "rgba(250, 250, 250, 0.25)");
+    root.setProperty("--panel", "rgba(250, 250, 250, 0.1)");
+    root.setProperty("--real", "#5ac88f");
+    root.setProperty("--suspicious", "#f0b429");
+    root.setProperty("--high", "#ff6b6b");
+    root.setProperty("--none", "#a6a9b4");
+  }
+}
+
+window.addEventListener("message", function (event) {
+  if (!event.data || event.data.type !== "streamlit:render") return;
+  applyTheme(event.data.theme);
+  // Only the first render configures the loop. Later renders arrive after the
+  // summary triggers a rerun, and must not disturb a share in progress.
+  if (configured) return;
+  configured = true;
+  var args = event.data.args || {};
+  config.api_url = args.api_url || "";
+  config.interval_ms = args.interval_ms || config.interval_ms;
+  config.capture_width = args.capture_width || config.capture_width;
+  config.jpeg_quality = args.jpeg_quality || config.jpeg_quality;
+  config.risk_suspicious = args.risk_suspicious || config.risk_suspicious;
+  config.risk_high = args.risk_high || config.risk_high;
+  drawRules();
+  setFrameHeight();
+});
+
+// --- capture -----------------------------------------------------------------
+
+var startButton = document.getElementById("start");
+var stopButton = document.getElementById("stop");
+var badge = document.getElementById("badge");
+var statusText = document.getElementById("status");
+var probText = document.getElementById("prob");
+var statsText = document.getElementById("stats");
+var errorText = document.getElementById("error");
+var preview = document.getElementById("preview");
+var canvas = document.getElementById("canvas");
+var context = canvas.getContext("2d");
+var spark = document.getElementById("spark");
+var sparkLine = document.getElementById("sparkLine");
+var ruleSuspicious = document.getElementById("ruleSuspicious");
+var ruleHigh = document.getElementById("ruleHigh");
+
+var MAX_CONSECUTIVE_ERRORS = 5;
+var SPARK_POINTS = 120;
+
+var stream = null;
+var timer = null;
+var inFlight = false;
+var session = null;
+var consecutiveErrors = 0;
+
+function newSession(id) {
+  return {
+    id: id,
+    startedAt: Date.now(),
+    framesSent: 0,
+    framesScored: 0,
+    lastSmoothed: null,
+    lastStatus: "WAITING",
+  };
+}
+
+function showError(message) {
+  errorText.textContent = message;
+  setFrameHeight();
+}
+
+function setBadge(status, probability) {
+  var known = status === "REAL" || status === "SUSPICIOUS" || status === "HIGH_RISK";
+  badge.setAttribute("data-status", known ? status : "");
+  statusText.textContent = status;
+  probText.textContent = probability === null ? "" : (probability * 100).toFixed(1) + "% fake";
+  spark.setAttribute("data-status", known ? status : "");
+}
+
+// The sparkline's y axis is probability, drawn upside down because SVG's
+// origin is top-left. The two rules are the entry thresholds, so the line
+// crossing one is the same event as the badge changing.
+function drawRules() {
+  ruleSuspicious.setAttribute("y1", 1 - config.risk_suspicious);
+  ruleSuspicious.setAttribute("y2", 1 - config.risk_suspicious);
+  ruleHigh.setAttribute("y1", 1 - config.risk_high);
+  ruleHigh.setAttribute("y2", 1 - config.risk_high);
+}
+
+// `recent` is the server's ring buffer: the last 60 seconds of smoothed
+// scores, oldest first. It is drawn right-aligned so the newest value sits at
+// the right edge and a short session starts from the right rather than
+// stretching to fill.
+function renderSpark(recent) {
+  if (!recent || recent.length < 2) {
+    sparkLine.setAttribute("points", "");
+    return;
+  }
+  var offset = SPARK_POINTS - recent.length;
+  var points = recent.map(function (entry, index) {
+    var y = Math.min(1, Math.max(0, entry.fake_probability));
+    return (offset + index) + "," + (1 - y).toFixed(4);
+  });
+  sparkLine.setAttribute("points", points.join(" "));
+}
+
+function renderStats() {
+  if (!session || session.framesSent === 0) {
+    statsText.textContent = "";
+    return;
+  }
+  var seconds = (Date.now() - session.startedAt) / 1000;
+  statsText.textContent =
+    session.framesSent + " frames sent · " +
+    session.framesScored + " with a face · " +
+    seconds.toFixed(0) + "s";
+}
+
+// Draw the current video frame into the canvas at the configured width and
+// return it as a JPEG blob. Returns null before the video has any pixels.
+function grabFrame() {
+  if (!preview.videoWidth || !preview.videoHeight) return null;
+  var width = Math.min(config.capture_width, preview.videoWidth);
+  var height = Math.round(preview.videoHeight * (width / preview.videoWidth));
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  context.drawImage(preview, 0, 0, width, height);
+  return new Promise(function (resolve) {
+    canvas.toBlob(resolve, "image/jpeg", config.jpeg_quality);
+  });
+}
+
+async function scoreOnce() {
+  // Drop-latest: if the previous verdict has not come back, skip this tick
+  // rather than queueing. A queue that grows makes the badge describe the past.
+  if (inFlight || !stream || !session) return;
+
+  var blob = await grabFrame();
+  if (!blob) return;
+
+  var sessionId = session.id;
+  inFlight = true;
+  try {
+    var response = await fetch(config.api_url + "/live/" + sessionId + "/frame", {
+      method: "POST",
+      headers: { "Content-Type": "image/jpeg" },
+      body: blob,
+    });
+    if (!response.ok) {
+      throw new Error("backend returned " + response.status);
+    }
+    var verdict = await response.json();
+    // The share can end while a frame is in flight; that verdict is stale.
+    if (!session || session.id !== sessionId) return;
+    consecutiveErrors = 0;
+    errorText.textContent = "";
+
+    // The server dropped this frame to keep its own single slot free. Nothing
+    // about it is new, so leave the badge alone.
+    if (verdict.dropped) return;
+
+    session.framesSent += 1;
+    session.framesScored = verdict.frames_scored;
+    if (verdict.face_found) {
+      // The badge reads the smoothed value, never the raw per-frame score:
+      // a single blurred frame swings the raw number hard.
+      session.lastSmoothed = verdict.smoothed;
+      session.lastStatus = verdict.status;
+      setBadge(verdict.status, verdict.smoothed);
+    } else if (session.lastSmoothed === null) {
+      setBadge("NO FACE", null);
+    } else {
+      // A face that steps out of frame for a moment should not read as REAL,
+      // so the last verdict is held and only labelled as stale.
+      setBadge(session.lastStatus, session.lastSmoothed);
+    }
+    renderSpark(verdict.recent);
+    renderStats();
+  } catch (err) {
+    if (!session || session.id !== sessionId) return;
+    consecutiveErrors += 1;
+    showError("Scoring failed: " + err.message);
+    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+      stop("Stopped after " + MAX_CONSECUTIVE_ERRORS + " failed frames in a row.");
+    }
+  } finally {
+    inFlight = false;
+  }
+}
+
+function releaseStream() {
+  if (!stream) return;
+  stream.getTracks().forEach(function (track) { track.stop(); });
+  stream = null;
+  preview.srcObject = null;
+  preview.classList.remove("on");
+}
+
+async function start() {
+  errorText.textContent = "";
+  try {
+    // getDisplayMedia needs the click that is still on the stack, so the
+    // picker goes first and the session is minted once a surface is chosen.
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+  } catch (err) {
+    // A cancelled picker is not an error worth shouting about.
+    if (err && err.name === "NotAllowedError") return;
+    showError("Could not start the share: " + (err && err.message ? err.message : err));
+    return;
+  }
+
+  var sessionId;
+  try {
+    var response = await fetch(config.api_url + "/live/start", { method: "POST" });
+    if (!response.ok) throw new Error("backend returned " + response.status);
+    sessionId = (await response.json()).session_id;
+  } catch (err) {
+    releaseStream();
+    showError("Could not start a session: " + (err && err.message ? err.message : err));
+    return;
+  }
+
+  preview.srcObject = stream;
+  preview.classList.add("on");
+  await preview.play().catch(function () {});
+
+  // The browser's own "Stop sharing" button ends the track without telling us.
+  stream.getVideoTracks().forEach(function (track) {
+    track.addEventListener("ended", function () { stop(); });
+  });
+
+  session = newSession(sessionId);
+  consecutiveErrors = 0;
+  setBadge("WAITING", null);
+  renderSpark(null);
+  renderStats();
+  spark.classList.add("on");
+  startButton.disabled = true;
+  stopButton.disabled = false;
+  timer = setInterval(scoreOnce, config.interval_ms);
+  setFrameHeight();
+}
+
+async function stop(message) {
+  if (!stream || !session) return;
+
+  clearInterval(timer);
+  timer = null;
+  releaseStream();
+  startButton.disabled = false;
+  stopButton.disabled = true;
+  setBadge("IDLE", null);
+  spark.classList.remove("on");
+  if (message) showError(message);
+
+  var finished = session;
+  session = null;
+  setFrameHeight();
+
+  // One call, on stop: the backend writes the single summary row here.
+  var summary;
+  try {
+    var response = await fetch(config.api_url + "/live/" + finished.id + "/stop", {
+      method: "POST",
+    });
+    if (response.status === 422) {
+      // No face was scored, so there is nothing worth recording.
+      summary = null;
+    } else if (!response.ok) {
+      throw new Error("backend returned " + response.status);
+    } else {
+      summary = await response.json();
+      summary.frames_sent = finished.framesSent;
+    }
+  } catch (err) {
+    showError("Could not save the session: " + (err && err.message ? err.message : err));
+    return;
+  }
+
+  // Sent once, on stop. Per-frame values would rerun the Streamlit script
+  // twice a second.
+  setComponentValue(summary);
+}
+
+startButton.addEventListener("click", start);
+stopButton.addEventListener("click", function () { stop(); });
+
+if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+  startButton.disabled = true;
+  showError("This browser does not expose getDisplayMedia, so screen capture is unavailable.");
+}
+
+window.addEventListener("resize", setFrameHeight);
+new ResizeObserver(setFrameHeight).observe(document.body);
+
+drawRules();
+send({ type: "streamlit:componentReady", apiVersion: 1 });
+setFrameHeight();
+</script>
+</body>
+</html>

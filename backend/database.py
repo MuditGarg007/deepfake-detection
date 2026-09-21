@@ -18,6 +18,21 @@ CREATE TABLE IF NOT EXISTS analyses (
 )
 """
 
+CREATE_LIVE_TABLE = """
+CREATE TABLE IF NOT EXISTS live_sessions (
+    id                SERIAL PRIMARY KEY,
+    started_at        TIMESTAMPTZ NOT NULL,
+    ended_at          TIMESTAMPTZ NOT NULL,
+    duration_seconds  DOUBLE PRECISION NOT NULL,
+    frames_scored     INTEGER NOT NULL,
+    mean_probability  DOUBLE PRECISION NOT NULL,
+    peak_probability  DOUBLE PRECISION NOT NULL,
+    status            TEXT NOT NULL,
+    timeline          JSONB NOT NULL,
+    user_feedback     TEXT
+)
+"""
+
 OLD_COLUMNS = [
     "ALTER TABLE analyses ADD COLUMN IF NOT EXISTS storage_path TEXT",
     "ALTER TABLE analyses ADD COLUMN IF NOT EXISTS user_feedback TEXT",
@@ -73,5 +88,6 @@ def to_json(value):
 
 def init_schema():
     execute(CREATE_TABLE)
+    execute(CREATE_LIVE_TABLE)
     for query in OLD_COLUMNS:
         execute(query)

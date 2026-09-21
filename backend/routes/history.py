@@ -18,9 +18,23 @@ MEDIA_TYPES = {
 router = APIRouter(tags=["analysis"])
 
 SELECT_BY_ID = "SELECT * FROM analyses WHERE id = %s"
+# Uploads and live sessions are separate tables - a live session has no
+# filename, no storage path and a duration instead of a suspicious region - so
+# history unions them into one stream and labels each row with its kind. Ids
+# are only unique within a kind.
 SELECT_HISTORY = """
-SELECT id, filename, storage_path, fake_probability, status, created_at
-FROM analyses ORDER BY created_at DESC, id DESC LIMIT %s
+SELECT * FROM (
+    SELECT id, 'upload' AS kind, filename, storage_path,
+           fake_probability, status, created_at
+    FROM analyses
+    UNION ALL
+    SELECT id, 'live' AS kind, 'Live screen share' AS filename,
+           NULL AS storage_path,
+           mean_probability AS fake_probability, status,
+           ended_at AS created_at
+    FROM live_sessions
+) combined
+ORDER BY created_at DESC, kind DESC, id DESC LIMIT %s
 """
 UPDATE_FEEDBACK = "UPDATE analyses SET user_feedback = %s WHERE id = %s RETURNING *"
 UPDATE_RESULT = """
