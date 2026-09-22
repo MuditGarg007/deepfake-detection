@@ -33,6 +33,7 @@ ML_DIR = Path(__file__).resolve().parent
 if str(ML_DIR) not in sys.path:
     sys.path.insert(0, str(ML_DIR))
 
+import protocol  # noqa: E402
 from augment import build_corruption, build_eval_transform  # noqa: E402
 from dataset_v2 import ForgeryDataset  # noqa: E402
 from evaluate_v2 import (  # noqa: E402
@@ -42,6 +43,37 @@ from evaluate_v2 import (  # noqa: E402
 # Corruptions summarised in the comparison table; the full sweep stays in each
 # run's per_method.csv.
 HEADLINE_CORRUPTIONS = ("clean", "jpeg_q40", "jpeg_q10", "downscale_0.25")
+
+
+def to_markdown(table: pd.DataFrame, decimals: int = 4) -> str:
+    """Markdown table without pulling in ``tabulate``.
+
+    ``DataFrame.to_markdown`` needs an optional dependency that is not in
+    ``requirements.txt``, so the one script whose entire job is to write a
+    markdown report crashed on import the first time it was run for real.
+    Formatting seventeen columns by hand is cheaper than carrying a dependency
+    for it.
+    """
+    def cell(value) -> str:
+        if isinstance(value, float):
+            return "" if pd.isna(value) else f"{value:.{decimals}f}"
+        return "" if value is None or pd.isna(value) else str(value)
+
+    columns = list(table.columns)
+    rows = [[cell(v) for v in row] for row in table.itertuples(index=False)]
+    widths = [
+        max(len(name), *(len(row[i]) for row in rows)) if rows else len(name)
+        for i, name in enumerate(columns)
+    ]
+    lines = [
+        "| " + " | ".join(n.ljust(w) for n, w in zip(columns, widths)) + " |",
+        "|" + "|".join("-" * (w + 2) for w in widths) + "|",
+    ]
+    lines += [
+        "| " + " | ".join(v.ljust(w) for v, w in zip(row, widths)) + " |"
+        for row in rows
+    ]
+    return "\n".join(lines)
 
 
 def collect(runs_dir: Path) -> pd.DataFrame:
@@ -69,13 +101,23 @@ def collect(runs_dir: Path) -> pd.DataFrame:
             )
         # Worst held-out method is the number that decides whether the detector
         # is trustworthy: an average hides a manipulation it cannot see at all.
+        # The per-family means say the same thing one level up — a run can hold
+        # its overall average while losing a whole generation mechanism.
         per_method_path = summary_path.parent / "per_method.csv"
         if per_method_path.is_file():
             table = pd.read_csv(per_method_path)
             table = table[(table["corruption"] == "clean") & (table["group"] == "heldout")]
             if len(table):
+                row["n_heldout"] = int(table["method"].nunique())
                 row["worst_heldout"] = float(table["auc"].min())
                 row["worst_method"] = table.loc[table["auc"].idxmin(), "method"]
+                families = table.assign(
+                    family=table["method"].map(protocol.family_for)
+                ).groupby("family")["auc"].mean()
+                for family in ("swap_graphics", "swap_learned", "reenactment",
+                               "synthesis"):
+                    if family in families:
+                        row[family] = float(families[family])
         rows.append(row)
     if not rows:
         raise SystemExit(f"no eval_*/summary.json found under {runs_dir}")
@@ -86,12 +128,14 @@ def write_comparison(runs_dir: Path) -> Path:
     table = collect(runs_dir)
     out = runs_dir / "v2_comparison.md"
     columns = [
-        "run", "backbone", "tune", "heldout_auc", "worst_heldout", "worst_method",
+        "run", "backbone", "tune", "n_heldout", "heldout_auc",
+        "swap_graphics", "swap_learned", "reenactment", "synthesis",
+        "worst_heldout", "worst_method",
         "heldin_auc", "video_auc", "jpeg_q40", "jpeg_q10", "downscale_0.25",
         "real_fpr",
     ]
     columns = [c for c in columns if c in table.columns]
-    body = table[columns].to_markdown(index=False, floatfmt=".4f")
+    body = to_markdown(table[columns])
     with open(out, "w", encoding="utf-8") as handle:
         handle.write("# v2 sweep comparison\n\n")
         handle.write(
@@ -99,7 +143,12 @@ def write_comparison(runs_dir: Path) -> Path:
             "and corpora that were excluded from training. `heldin_auc` is the "
             "same quantity over the manipulations the model trained on — a large "
             "gap between the two is the overfitting this work exists to remove. "
-            "`worst_heldout` is the single weakest held-out manipulation.\n\n"
+            "`worst_heldout` is the single weakest held-out manipulation, and "
+            "the four family columns are the mean held-out AUC per generation "
+            "mechanism — a run can hold its overall average while losing a "
+            "whole mechanism. `n_heldout` is how many manipulations the "
+            "average covers, and rows with different counts are not comparable "
+            "to each other.\n\n"
         )
         handle.write(body + "\n")
     print(body)
