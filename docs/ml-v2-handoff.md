@@ -172,7 +172,60 @@ while the false-positive rate falls by a factor of 2.7. That is still a
 collapse relative to its own 0.079 clean, which is what §5b's `heavy_wide`
 retrain is for.
 
-## 5. The two open failure modes
+### Ablations (session 4)
+
+All ViT-B/16, LN-tuned, hyperspherical head, SBI 0.25, `heavy` augmentation
+unless the name says otherwise — one factor changed at a time against
+`clipb_full`.
+
+**Read the `n` column first.** These runs were scored with
+`--heldout-all-splits` on the repaired corpus, so they average over 23 held-out
+manipulations; `clipb_full`, `clipl_full` and `effnet_data_only` were scored
+before that and average over 14. Their AUCs are **not** comparable to each
+other, which is why `report_v2.py` prints the count. `finalize_v2.sh` re-scores
+everything on one manifest and is the first thing to run next.
+
+False-positive rate *is* comparable across all of them: it is measured on the
+test-split real pool, which the corpus repair changed by 35 frames out of
+~6,300.
+
+| run | n | held-out | q10 | FPR clean | FPR q10 | val-unseen |
+|---|---|---|---|---|---|---|
+| `clipb_light_aug` | 23 | 0.8536 | 0.5961 | 0.088 | 0.452 | 0.9627 |
+| `clipb_mlp_head` | 23 | 0.8204 | 0.6707 | 0.158 | 0.486 | 0.9582 |
+| `clipb_full` (baseline) | 14 | 0.8200 | 0.6910 | 0.086 | 0.494 | 0.9679 |
+| `clipb_no_latent` | 23 | 0.8086 | 0.6514 | 0.094 | 0.467 | 0.9673 |
+| `clipb_heavy_wide` | 23 | 0.7938 | 0.6403 | 0.102 | **0.316** | 0.9671 |
+| `clipb_no_sbi` | 23 | 0.7296 | 0.6009 | 0.124 | 0.253 | 0.9678 |
+| `clipb_linear_probe` | 23 | 0.6407 | 0.5461 | 0.279 | 0.698 | 0.9251 |
+
+Three things worth keeping:
+
+**SBI is the single largest contributor, and the selection metric cannot see
+it.** `clipb_no_sbi` reaches val-unseen 0.9678 against the baseline's 0.9679 —
+a difference of one ten-thousandth — and then collapses on held-out swaps:
+inswap 0.425, simswap 0.494, cdf_synthesis 0.438, all at or below chance, with
+the `swap_learned` family mean at 0.656 against 0.844 for `clipb_light_aug`.
+The val-unseen set is FaceSwap, VQGAN, mobileswap and tpsm, and SBI does not
+change any of them, so the protocol's own model-selection signal is blind to
+the thing that matters most. That is a limitation of the protocol, not of SBI:
+**val-unseen picks the epoch, it does not validate the recipe.**
+
+**LN-tuning is doing the work, not the head.** `clipb_linear_probe` freezes the
+backbone completely and lands at 0.6407 with a 0.279 false-positive rate — below
+the EfficientNet control on the same corpus. Training 41k LayerNorm affines is
+worth ~0.18 held-out AUC over training none.
+
+**The hyperspherical head buys calibration more than ranking.**
+`clipb_mlp_head` holds up on AUC but its false-positive rate is 0.158 against
+0.086. Removing feature magnitude from the decision is what keeps the score
+distribution in a sensible place across corpora.
+
+`clipb_no_latent` (no Gaussian jitter, no same-class mixup) is within noise of
+the baseline on val-unseen and slightly worse everywhere else; latent
+augmentation is real but second-order, as expected.
+
+## 5. The two failure modes — one resolved, one partly closed
 
 ### 5a. SadTalker — resolved: no per-frame signal, and not a class failure
 
@@ -277,16 +330,44 @@ level, where `video_processor` already has every frame it needs.
 ViT-B) are now the weakest *swap* results, and swaps are what someone is most
 likely to actually run. They do respond to backbone scale, unlike SadTalker.
 
-### 5b. Calibration collapses at JPEG q10
+### 5b. Calibration collapses at JPEG q10 — partly closed
 
-AUC degrades gracefully (0.82 -> 0.69) but real FPR blows out 0.086 -> 0.493.
-The score distribution shifts bodily rather than losing separability. Cause is
-in the config: `heavy` augmentation samples
-`ImageCompression(quality_range=(30, 95))`, so q10 was never seen.
+AUC degrades gracefully but the false-positive rate on genuine faces does not.
+For `clipb_full`: held-out AUC 0.8200 -> 0.6910 from clean to q10, while real
+FPR@0.5 goes 0.086 -> **0.494**. The score distribution shifts bodily rather
+than losing separability. The cause was in the config: `heavy` augmentation
+samples `ImageCompression(quality_range=(30, 95))`, so q10 was never seen.
 
-A `heavy_wide` augmentation level already exists for this test (JPEG floor
-30->12, second pass 40->20, downscale floor 0.35->0.20). `heavy` was left
-untouched so the not-yet-run `clipb_light_aug` ablation stays comparable.
+`heavy_wide` (JPEG floor 30->12, second pass 40->20, downscale floor
+0.35->0.20) was run on ViT-B and **closes about a third of the gap**:
+
+| | FPR clean | FPR q40 | FPR q10 |
+|---|---|---|---|
+| `clipb_full` (`heavy`) | 0.086 | 0.143 | 0.494 |
+| `clipb_heavy_wide` | 0.102 | 0.128 | **0.316** |
+
+So the range gap was part of it, not all of it. 0.316 is still three times the
+clean rate, which says the remaining shift is not simply "q10 was out of
+distribution" — a model that had genuinely absorbed q10 would hold its
+operating point there.
+
+Two other things the table in the ablations section shows:
+
+* **Scale helps the operating point more than the range does.** `clipl_full`,
+  trained on plain `heavy`, has a q10 FPR of 0.186 — better than ViT-B with
+  `heavy_wide`. The ViT-L `heavy_wide` run is the obvious combination and is
+  the one run the sweep had not finished when it was paused.
+* **Calibrating fixes what augmentation cannot.** `calibrate_v2.py` picks the
+  threshold over a *mixture* of clean and degraded conditions rather than on
+  pristine PNG, which moves the operating point to where the deployed
+  distribution actually sits. Measured on `clipb_full`: selecting on clean
+  alone gives a suspicious-band threshold of 0.495, and the deployment mixture
+  gives 0.619, holding the video-level false-positive rate between 0.048 and
+  0.176 across clean, q40, q20 and 0.5x downscale instead of letting it run.
+
+Augmentation range, backbone scale and threshold selection are three
+independent levers on the same failure, and the evidence so far says the third
+is the cheapest.
 
 ## 6. Bugs fixed — do not reintroduce
 
@@ -386,7 +467,7 @@ project.
 `inference.py` dispatches on `config["version"]`, so `load_model` / `predict`
 work unchanged for both checkpoint generations.
 
-### Backend change (uncommitted)
+### Backend changes
 
 `backend/services/video_processor.crop_face` gained an `aligned` mode
 reproducing the training crop: a square of side `1.4 * max(box_w, box_h)`
@@ -394,85 +475,134 @@ centred on the MTCNN box centre, raised by `0.10 * side`. Constants were fitted
 by matching MTCNN boxes on the raw FF++ videos against the corresponding
 DeepfakeBench crops — median normalized cross-correlation 0.79 over 25 videos.
 `detector.crop_style()` reads the loaded checkpoint's version, so v1 keeps the
-old fixed-20px-margin crop and nothing breaks while v2 is unfinished.
+old fixed-20px-margin crop and nothing breaks while v2 is unfinished. Verified
+offline: square at every position, reflect-padded rather than clipped for faces
+at all four frame edges, side scaling with the box, and the rise landing 14 px
+above the box centre for a 100 px box.
+
+`detector.risk_bands()` reads the operating point `calibrate_v2.py` writes into
+the checkpoint, and both the upload path (`video_processor.risk_status`,
+`suspicious_region`) and the live path (`live_session.next_status`) now call
+it. The checkpoint wins over `RISK_SUSPICIOUS` / `RISK_HIGH` /
+`FRAME_THRESHOLD`, because `backend/.env` already pins all three to the v1
+constants — letting the environment win would mean a calibrated checkpoint
+silently never takes effect. `RISK_BANDS_SOURCE=env` forces them back.
 
 ## 8. Timings (measured wall clock, train+eval)
 
 | run | per epoch | total |
 |---|---|---|
 | `effnet_data_only` | 108 s | 10 min |
-| `clipb_full` | 237 s | 24 min |
+| `clipb_linear_probe` | 129 s | 13 min |
+| `clipb_full` and the other ViT-B ablations | 237-250 s | 24 min |
 | `clipl_full` | 965 s | ~96 min |
 
-Evaluation over ~27k frames x 4 corruptions: ~1 min (EfficientNet), ~3 min
-(ViT-B), ~10 min (ViT-L). Dataloader does 475 img/s at 8 workers — never the
-bottleneck. GPU is an RTX 4060 Laptop, 8 GB; ViT-L at batch 24 peaks ~6.0 GB.
+Evaluation with `--heldout-all-splits` over ~35k frames x 4 corruptions: ~2 min
+(EfficientNet), ~4 min (ViT-B), ~13 min (ViT-L). Dataloader does 475 img/s at 8
+workers — never the bottleneck. GPU is an RTX 4060 Laptop, 8 GB; ViT-L at batch
+24 peaks ~6.0 GB.
 
 ## 9. Resume
 
+Paused at 00:52 on 2026-09-23, mid-`clipl_heavy_wide`. Eight of the nine sweep
+runs are complete; the half-trained ViT-L checkpoint was deleted, so every
+directory under `checkpoints/` has a `config.json` and loads.
+
+| stage | state |
+|---|---|
+| core (`effnet_data_only`, `clipb_full`, `clipl_full`) | done |
+| ablations (5 ViT-B runs) | done |
+| `clipb_heavy_wide` | done |
+| `clipl_heavy_wide` | **not done** — restarts from epoch 1, ~96 min |
+| `dinov3l_full`, `convnext_full` | not started, ~90 and ~45 min |
+
 `run_experiments.sh` skips any run whose log already ends in `checkpoint: `, so
-re-running the same command picks up where it stopped.
+the same command picks up where it stopped. `train_v2.py` has no within-run
+resume, which is the only reason the ViT-L wide-augmentation run restarts.
 
 ```bash
 cd /home/mudit/deepfake-detection
 
-# 1. Redo the one interrupted evaluation (~10 min).
-.venv/bin/python machine-learning/evaluate_v2.py \
-    --checkpoint machine-learning/checkpoints/v2_clip_vit_l14_ln_clipl_full_20260921_225402 \
-    --data data/processed_v2 --split test --amp \
-    --max-per-method 800 --max-real 4000 \
-    --corruptions clean jpeg_q40 jpeg_q10 downscale_0.25
+# 1. The comparison is not yet a comparison. Six runs were scored on the
+#    repaired corpus with --heldout-all-splits (23 held-out manipulations) and
+#    three were scored before it (14). finalize_v2.sh re-scores everything —
+#    including the v1 baseline, which has only ever been evaluated on
+#    Celeb-DF — with identical flags, then ranks, sweeps all twelve
+#    corruptions on the finalists, calibrates the winner and checks the
+#    ensemble. ~1 h, and it is worth running before anything else because
+#    nothing in §4 can be ranked until it has.
+bash machine-learning/finalize_v2.sh
 
-# 2. Resume the sweep — skips the 3 completed runs. ~3h40m remaining:
-#    5 ViT-B ablations (~120 min), dinov3l_full (~70 min), convnext_full (~30 min).
+# 2. Finish the sweep (~3h30m): clipl_heavy_wide, dinov3l_full, convnext_full.
 bash machine-learning/run_experiments.sh all
 
-# 3. Comparison table + ensemble check.
-.venv/bin/python machine-learning/report_v2.py
-.venv/bin/python machine-learning/report_v2.py --amp \
-    --ensemble machine-learning/checkpoints/v2_clip_vit_l14_ln_clipl_full_* \
-               machine-learning/checkpoints/v2_clip_vit_b16_ln_clipb_full_*
+# 3. Re-run finalize so the new runs join the table.
+bash machine-learning/finalize_v2.sh
 ```
 
-The queued ablations are `clipb_no_sbi`, `clipb_light_aug`,
-`clipb_linear_probe`, `clipb_mlp_head`, `clipb_no_latent`. The last two are the
-lowest-information runs in the set (head shape and latent augmentation are
-second-order next to backbone, SBI and augmentation strength) — drop them to
-save ~50 min if time matters.
+Steps 1 and 2 are independent — if the GPU time is there, (2) then (3) alone is
+enough and saves an hour.
 
 ### Then, in value order
 
-1. **Diagnose SadTalker (§5a).** The largest single defect and possibly a whole
-   invisible class of generation. Start with its score histogram versus reals,
-   then check `heygen` and `deepfacelab`. If it is a class failure, add a
-   held-in talking-head method rather than scaling the backbone.
-2. **`heavy_wide` retrain of the winner** (~90 min) to test whether the q10
-   calibration collapse (§5b) is purely a train/test augmentation-range gap.
-   The level exists; pass `--augment heavy_wide`.
-3. **Threshold selection.** Every number here is at the arbitrary 0.5 cutoff.
-   Pick the operating point on the *val* split against a stated false-positive
-   budget, write it into the checkpoint config, and have `backend/config.py`'s
-   risk bands read it instead of the v1 constants.
-4. **Full 12-corruption sweep on the finalists** (~30 min) — drop
-   `--corruptions` for the complete table.
-5. **Ship it.** Point `MODEL_DIR` in `backend/.env` at the winning checkpoint;
-   `detector.crop_style()` switches the crop convention automatically. Run
-   `backend/smoke_test.py` before and after.
+1. **A temporal signal for still-driven renders (§5a).** The diagnosis is
+   finished and the conclusion is that no frame-level model will fix SadTalker:
+   its crops are ~97% unmodified pixels. Within-video pixel σ separates it at
+   0.99 and is nearly free to compute. It belongs in
+   `video_processor.analyze_video`, which already decodes every frame, as a
+   **separate** video-level signal — the feature is specific to still-driven
+   rendering and scores 0.32-0.44 on ordinary manipulations, so blending it
+   into the model score would make everything else worse. Suggested shape: emit
+   it alongside `fake_probability` and raise the verdict when it is extreme,
+   rather than averaging the two.
+2. **MidJourney at 0.318 (§6c).** A worse miss than SadTalker and newly
+   visible. Unlike SadTalker it *is* inverted — median 0.047 against a real
+   median of 0.091 — so there is a cue firing backwards, which is a more
+   tractable thing to chase. Start with `diagnose_v2.py --heldout-all-splits`
+   on the finalists and check whether it survives the crop-size confound in §3.
+3. **Ship it.** Point `MODEL_DIR` in `backend/.env` at the winning checkpoint.
+   `detector.crop_style()` switches the crop convention and
+   `detector.risk_bands()` picks up the calibrated thresholds, both
+   automatically. Run `backend/smoke_test.py` before and after — it has not
+   been run against a v2 checkpoint yet, and it is the only end-to-end check
+   that the aligned crop and the new thresholds behave in the real service.
+4. **Retire the val-unseen blind spot.** The ablations showed `clipb_no_sbi`
+   matching the baseline on val-unseen to four decimal places while collapsing
+   on held-out swaps. Adding one held-out-style swap to `VAL_UNSEEN` would make
+   the selection signal sensitive to the thing SBI actually fixes — at the cost
+   of one manipulation's worth of held-out honesty.
 
 ## 10. Open items
 
-* **Nothing is committed.** `git status` shows 3 modified files
-  (`backend/services/detector.py`, `backend/services/video_processor.py`,
-  `machine-learning/inference.py`) and 11 new ones. `data/` and `logs/` are
-  gitignored. The working tree is the only copy — commit early next session.
+* **Committed, on `ml/v2-detector`.** Seven commits: the pipeline, the
+  diagnosis tooling, the backend wiring, the aggregation study, the report fix
+  and the handoff. `data/` and `logs/` stay gitignored; `runs/` is ignored
+  except the reports and the measurement CSVs the tables above cite. The branch
+  has not been merged or pushed.
+* **The comparison table is not yet comparable** — six runs cover 23 held-out
+  manipulations and three cover 14. `finalize_v2.sh` fixes it; see §9 step 1.
+  Until then, rank on the false-positive column, which is measured on the same
+  real pool throughout.
 * `Deepfake-Eval-2024` (`nuriachandra/Deepfake-Eval-2024`) is the one genuinely
-  in-the-wild 2024 benchmark on the Hub. Manual-approval gated, not downloaded.
-  Worth requesting — a better final test than anything currently held out.
-* `evaluate_v2.py` aggregates video-level scores with a plain mean, matching
-  `video_processor.aggregate`. A trimmed or top-k mean is likely better and has
-  not been tried.
-* No ensembling has been measured yet; `report_v2.py --ensemble` is written but
-  unrun.
+  in-the-wild 2024 benchmark on the Hub, and would be a better final test than
+  anything currently held out. Checked: the repo is reachable and holds 2,036
+  video files, 1,976 image files and metadata CSVs, but it is
+  `gated: manual` — `hf_hub_download` returns `GatedRepoError` (401). Needs an
+  approved account and `HF_TOKEN`; nothing else blocks it.
+* **Video-level aggregation is settled: keep the mean.** `aggregate_v2.py`
+  compared seven aggregators on the ViT-L scores. Held-out macro AUC prefers
+  `max` (0.8610 against the mean's 0.8468) because AUC rewards spreading the
+  scores out, but at a matched 5% false-positive rate `max` is the worst of the
+  seven (0.6018) and the mean and median are the best (0.6482, 0.6572).
+* **Ensembling is still unmeasured.** `report_v2.py --ensemble` now shares
+  frame selection with `evaluate_v2.py` and takes `--heldout-all-splits`;
+  `finalize_v2.sh` runs it over the top three. Nothing has been scored yet.
 * The v1 `Deepfakes` manipulation is held-in, which keeps the v1-vs-v2
   comparison fair but means the v1 model's 0.999 and v2's held-out numbers are
-  not measuring the same thing. Compare v1 and v2 on the held-out set only.
+  not measuring the same thing. Compare v1 and v2 on the held-out set only —
+  and note that the v1 checkpoint's stored evaluation covers a single
+  manipulation, so its 0.8400 is not the same quantity as anything else in the
+  table until `finalize_v2.sh` re-scores it.
+* `backend/smoke_test.py` has never been run against a v2 checkpoint. It is the
+  only end-to-end check that the aligned crop and the calibrated thresholds
+  behave inside the real service.
