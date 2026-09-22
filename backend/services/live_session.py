@@ -109,16 +109,19 @@ class LiveSession:
         the badge strobe between two states several times a second.
         """
         gap = config.RISK_HYSTERESIS
+        bands = detector.risk_bands()
+        high = bands["risk_high"]
+        suspicious = bands["risk_suspicious"]
         if self.status == "HIGH_RISK":
-            if value >= config.RISK_HIGH - gap:
+            if value >= high - gap:
                 return "HIGH_RISK"
-        elif value >= config.RISK_HIGH:
+        elif value >= high:
             return "HIGH_RISK"
 
         if self.status in ("SUSPICIOUS", "HIGH_RISK"):
-            if value >= config.RISK_SUSPICIOUS - gap:
+            if value >= suspicious - gap:
                 return "SUSPICIOUS"
-        elif value >= config.RISK_SUSPICIOUS:
+        elif value >= suspicious:
             return "SUSPICIOUS"
 
         return "REAL"
