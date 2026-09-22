@@ -4,12 +4,18 @@
 
     from inference import load_model, predict
 
-    model = load_model("machine-learning/checkpoints/efficientnet_b0_<ts>")
+    model = load_model("machine-learning/checkpoints/v2_clip_vit_l14_ln_<ts>")
     prob  = predict(model, "data/processed/test/fake/xxx.jpg")   # 0.0-1.0 fake
 
 ``predict`` accepts a file path, a PIL image, or an RGB ``numpy`` array (the
 form ``video_processor`` passes after cropping a face), and also a list of any
 of those for batched scoring.
+
+The loader handles both checkpoint generations. A v1 ``config.json`` carries
+``model`` and gets the ImageNet-normalized EfficientNet/Xception path; a v2 one
+carries ``version: 2`` plus ``backbone`` and its own normalization statistics,
+which matter — feeding CLIP ImageNet means/stds silently costs real accuracy.
+Callers do not need to know which they have.
 """
 
 from __future__ import annotations
@@ -29,7 +35,24 @@ if str(ML_DIR) not in sys.path:
 from dataset import build_transform  # noqa: E402
 from models import get_model  # noqa: E402
 
-_TRANSFORM = build_transform(train=False)
+_V1_TRANSFORM = build_transform(train=False)
+
+
+def _v2_transform(size: int, mean: tuple[float, ...], std: tuple[float, ...]):
+    """Eval preprocessing for a v2 checkpoint, as a PIL-image -> tensor callable.
+
+    ``augment.build_eval_transform`` is an albumentations pipeline over uint8
+    HWC arrays, while ``predict`` normalizes everything to PIL first; this wraps
+    the conversion so both checkpoint generations expose the same callable.
+    """
+    from augment import build_eval_transform
+
+    pipeline = build_eval_transform(size, mean, std)
+
+    def apply(image: Image.Image) -> torch.Tensor:
+        return pipeline(image=np.asarray(image, dtype=np.uint8))["image"]
+
+    return apply
 
 
 def load_model(checkpoint_dir: str | Path, device: str | torch.device | None = None):
@@ -53,13 +76,30 @@ def load_model(checkpoint_dir: str | Path, device: str | torch.device | None = N
         device = "cuda" if torch.cuda.is_available() else "cpu"
     device = torch.device(device)
 
-    # pretrained=False: the fine-tuned weights below replace the ImageNet ones,
-    # so there is no reason to download them.
-    model = get_model(config["model"], pretrained=False)
+    # pretrained=False: the fine-tuned weights below replace the pretrained
+    # ones, so there is no reason to download them.
+    if config.get("version") == 2:
+        from models_v2 import Detector
+
+        model = Detector(
+            config["backbone"],
+            pretrained=False,
+            tune=config.get("tune", "ln"),
+            head=config.get("head", "hypersphere"),
+        )
+        size = config.get("image_size", 224)
+        transform = _v2_transform(
+            size, tuple(config["mean"]), tuple(config["std"])
+        )
+    else:
+        model = get_model(config["model"], pretrained=False)
+        transform = _V1_TRANSFORM
+
     model.load_state_dict(torch.load(weights_path, map_location=device))
     model.to(device).eval()
     model.device = device
     model.config = config
+    model.transform = transform
     return model
 
 
@@ -90,7 +130,8 @@ def predict(model, image) -> float | list[float]:
         return []
 
     device = getattr(model, "device", next(model.parameters()).device)
-    tensor = torch.stack([_TRANSFORM(_to_pil(img)) for img in images]).to(device)
+    transform = getattr(model, "transform", _V1_TRANSFORM)
+    tensor = torch.stack([transform(_to_pil(img)) for img in images]).to(device)
     probabilities = torch.sigmoid(model(tensor).squeeze(1).float()).cpu().numpy()
     return [float(p) for p in probabilities] if batched else float(probabilities[0])
 
