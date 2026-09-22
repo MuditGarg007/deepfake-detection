@@ -18,8 +18,16 @@ machine-learning/checkpoints/*
 # Note: `runs/*` (not `runs/`) so git still descends into the directory and
 # can un-ignore the file below.
 machine-learning/runs/*
-# ...but the model-comparison report is a deliverable, keep it tracked.
+# ...but the reports and the measurements the handoff cites are deliverables:
+# without them the numbers in docs/ml-v2-handoff.md cannot be checked against
+# anything. Frame-level score dumps stay ignored — they are megabytes and
+# regenerable from a checkpoint.
 !machine-learning/runs/comparison.md
+!machine-learning/runs/v2_comparison.md
+!machine-learning/runs/ranking.txt
+!machine-learning/runs/temporal_v2.csv
+!machine-learning/runs/video_aggregation.csv
+!machine-learning/runs/sharpness_vs_score.csv
 *.log
 
 backend/app.db
