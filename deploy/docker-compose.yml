@@ -1,18 +1,33 @@
+# Runs on a shared VPS whose host Caddy already owns :80/:443, so this stack
+# publishes only on loopback and the host Caddy proxies to it (see Caddyfile).
+#
 # Usage, from the repo root:
 #   cp deploy/.env.example deploy/.env   # then fill it in
 #   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+
+name: deepguard
 
 services:
   api:
     build:
       context: ..
       dockerfile: deploy/backend.Dockerfile
+    image: deepguard-api
     environment:
       NEON_DB_URL: ${NEON_DB_URL:?set NEON_DB_URL in deploy/.env}
       CORS_ORIGINS: https://${DOMAIN}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
+      # Match torch's thread pool to the CPU cap below.
+      OMP_NUM_THREADS: 2
+      MKL_NUM_THREADS: 2
+    ports:
+      - "127.0.0.1:8100:8000"
     volumes:
       - uploads:/app/backend/uploads
+    # Hard caps so inference can never starve the other workloads on the host.
+    cpus: 2.0
+    mem_limit: 2560m
+    memswap_limit: 3g
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
       interval: 30s
@@ -26,26 +41,12 @@ services:
       dockerfile: ../deploy/frontend.Dockerfile
       args:
         NEXT_PUBLIC_API_URL: https://${DOMAIN:?set DOMAIN in deploy/.env}/api
-    restart: unless-stopped
-
-  caddy:
-    image: caddy:2-alpine
+    image: deepguard-web
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    environment:
-      DOMAIN: ${DOMAIN}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - api
-      - web
+      - "127.0.0.1:3100:3000"
+    cpus: 0.5
+    mem_limit: 512m
     restart: unless-stopped
 
 volumes:
   uploads:
-  caddy_data:
-  caddy_config:
