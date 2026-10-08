@@ -1,27 +1,3 @@
-"""Which way of turning frame scores into a video verdict is actually best?
-
-`video_processor.aggregate` takes the plain mean of a video's frame scores, and
-`evaluate_v2.py` matches it so the reported video AUC means what the product
-does. Neither choice was ever measured, and the obvious alternatives pull in
-opposite directions: a trimmed mean is robust to a few bad frames, while a
-top-k mean is the right shape for a manipulation that only touches part of a
-clip.
-
-This reads the per-frame scores `diagnose_v2.py` already wrote — no GPU — and
-compares aggregators on the two things that matter separately:
-
-*   **Ranking**, as pooled AUC and as held-out macro AUC. These are
-    threshold-free and can disagree with each other.
-*   **Decisions**, as recall at a *matched* false-positive rate. Comparing
-    recall at a shared 0.5 cutoff instead would reward whichever aggregator
-    pushes scores up, which is not the same as rewarding a better one.
-
-Usage::
-
-    python machine-learning/aggregate_v2.py \
-        --scores machine-learning/runs/diagnose_<run>/scores_clean.csv
-"""
-
 from __future__ import annotations
 
 import argparse

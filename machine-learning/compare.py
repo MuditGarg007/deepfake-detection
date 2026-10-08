@@ -1,12 +1,3 @@
-"""T9 — build ``machine-learning/runs/comparison.md`` from evaluated models.
-
-Usage::
-
-    python machine-learning/compare.py \
-        --checkpoints machine-learning/checkpoints/efficientnet_b0_* \
-                      machine-learning/checkpoints/xception_*
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -16,12 +7,10 @@ from pathlib import Path
 
 ML_DIR = Path(__file__).resolve().parent
 
-# ROC-AUC differences smaller than this are treated as a tie and broken on F1.
 AUC_TIE_MARGIN = 0.001
 
 
 def load_metrics(checkpoint_dir: Path, runs_root: Path) -> dict:
-    """Read the metrics.json written by evaluate.py for this checkpoint."""
     with open(checkpoint_dir / "config.json", encoding="utf-8") as handle:
         config = json.load(handle)
     run_name = config.get("run_name", checkpoint_dir.name)
@@ -35,7 +24,6 @@ def load_metrics(checkpoint_dir: Path, runs_root: Path) -> dict:
 
 
 def render(entries: list[dict]) -> str:
-    """Render the comparison table plus a conclusion paragraph."""
     header = (
         "| Model | Accuracy | Precision | Recall | F1 | ROC-AUC | Infer ms/img |\n"
         "|---|---|---|---|---|---|---|\n"
@@ -58,9 +46,6 @@ def render(entries: list[dict]) -> str:
     fastest = min(entries, key=lambda e: e["inference_ms_per_image"])
     sample = entries[0]
 
-    # ROC-AUC is the primary metric (threshold-free; Phase 2 picks its own
-    # cutoffs from thresholds.csv). But when the AUC spread is within noise,
-    # ranking on it alone picks a winner on nothing, so fall back to F1.
     auc_spread = best_auc["roc_auc"] - min(e["roc_auc"] for e in entries)
     tie = len(entries) > 1 and auc_spread < AUC_TIE_MARGIN
     winner = best_f1 if tie else best_auc

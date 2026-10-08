@@ -1,23 +1,3 @@
-"""T8 — inference API consumed by Phase 2 (``backend/services/detector.py``).
-
-::
-
-    from inference import load_model, predict
-
-    model = load_model("machine-learning/checkpoints/v2_clip_vit_l14_ln_<ts>")
-    prob  = predict(model, "data/processed/test/fake/xxx.jpg")   # 0.0-1.0 fake
-
-``predict`` accepts a file path, a PIL image, or an RGB ``numpy`` array (the
-form ``video_processor`` passes after cropping a face), and also a list of any
-of those for batched scoring.
-
-The loader handles both checkpoint generations. A v1 ``config.json`` carries
-``model`` and gets the ImageNet-normalized EfficientNet/Xception path; a v2 one
-carries ``version: 2`` plus ``backbone`` and its own normalization statistics,
-which matter — feeding CLIP ImageNet means/stds silently costs real accuracy.
-Callers do not need to know which they have.
-"""
-
 from __future__ import annotations
 
 import json
@@ -39,12 +19,6 @@ _V1_TRANSFORM = build_transform(train=False)
 
 
 def _v2_transform(size: int, mean: tuple[float, ...], std: tuple[float, ...]):
-    """Eval preprocessing for a v2 checkpoint, as a PIL-image -> tensor callable.
-
-    ``augment.build_eval_transform`` is an albumentations pipeline over uint8
-    HWC arrays, while ``predict`` normalizes everything to PIL first; this wraps
-    the conversion so both checkpoint generations expose the same callable.
-    """
     from augment import build_eval_transform
 
     pipeline = build_eval_transform(size, mean, std)
@@ -56,11 +30,6 @@ def _v2_transform(size: int, mean: tuple[float, ...], std: tuple[float, ...]):
 
 
 def load_model(checkpoint_dir: str | Path, device: str | torch.device | None = None):
-    """Rebuild the architecture from ``config.json`` and load ``best.pth``.
-
-    Returns an eval-mode module with ``.device`` attached so ``predict`` knows
-    where to put its inputs.
-    """
     directory = Path(checkpoint_dir)
     config_path = directory / "config.json"
     weights_path = directory / "best.pth"
@@ -76,8 +45,6 @@ def load_model(checkpoint_dir: str | Path, device: str | torch.device | None = N
         device = "cuda" if torch.cuda.is_available() else "cpu"
     device = torch.device(device)
 
-    # pretrained=False: the fine-tuned weights below replace the pretrained
-    # ones, so there is no reason to download them.
     if config.get("version") == 2:
         from models_v2 import Detector
 
@@ -104,7 +71,6 @@ def load_model(checkpoint_dir: str | Path, device: str | torch.device | None = N
 
 
 def _to_pil(image) -> Image.Image:
-    """Normalize a path / PIL image / RGB ndarray into an RGB PIL image."""
     if isinstance(image, Image.Image):
         return image.convert("RGB")
     if isinstance(image, (str, Path)):
@@ -123,7 +89,6 @@ def _to_pil(image) -> Image.Image:
 
 @torch.no_grad()
 def predict(model, image) -> float | list[float]:
-    """Fake probability in [0, 1]. A list input returns a list of floats."""
     batched = isinstance(image, (list, tuple))
     images = list(image) if batched else [image]
     if not images:
@@ -137,7 +102,6 @@ def predict(model, image) -> float | list[float]:
 
 
 def _smoke_test(checkpoint_dir: str, data_dir: str, limit: int) -> int:
-    """Score ``limit`` test crops per class and report the mean probability."""
     import pandas as pd
 
     model = load_model(checkpoint_dir)
@@ -163,7 +127,6 @@ def _smoke_test(checkpoint_dir: str, data_dir: str, limit: int) -> int:
             print("FAIL: mean fake probability above 0.5 on real crops")
             failures += 1
 
-    # Single-image and ndarray paths must agree with the batched path.
     single_path = Path(data_dir) / frame.iloc[0]["path"]
     single = predict(model, single_path)
     array = predict(model, np.array(Image.open(single_path).convert("RGB")))

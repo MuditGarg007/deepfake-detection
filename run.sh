@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# Run the whole app — FastAPI backend + Streamlit frontend — with one command.
+# Run the whole app — FastAPI backend + Next.js frontend — with one command.
 #
-#   ./run.sh                          # backend on 8000, frontend on 8501
-#   ./run.sh --backend-port 8010 --frontend-port 8510
-#   ./run.sh --skip-install           # never touch .venv
+#   ./run.sh                          # backend on 8000, frontend on 3000
+#   ./run.sh --backend-port 8010 --frontend-port 3010
+#   ./run.sh --skip-install           # never touch .venv or node_modules
 #
 # Busy ports are stepped past automatically, the frontend is pointed at whatever
 # port the backend actually got, and Ctrl-C stops both.
@@ -15,7 +15,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
 BACKEND_PORT=8000
-FRONTEND_PORT=8501
+FRONTEND_PORT=3000
 SKIP_INSTALL=0
 LOG_DIR="$ROOT/logs"
 
@@ -32,11 +32,8 @@ done
 say() { printf '\033[1m▸ %s\033[0m\n' "$*"; }
 die() { printf '\033[1m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
-# --- ports -------------------------------------------------------------------
-
 port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && exec 3<&- && return 0 || return 1; }
 
-# First free port at or above $1, giving up after 20 tries.
 free_port() {
   local port="$1"
   for _ in $(seq 20); do
@@ -53,8 +50,6 @@ FRONTEND_PORT="$(free_port "$FRONTEND_PORT")"
 [[ "$BACKEND_PORT" == "$WANTED_BACKEND" ]] || say "port $WANTED_BACKEND is taken — backend moves to $BACKEND_PORT"
 [[ "$FRONTEND_PORT" == "$WANTED_FRONTEND" ]] || say "port $WANTED_FRONTEND is taken — frontend moves to $FRONTEND_PORT"
 
-# --- dependencies ------------------------------------------------------------
-
 if [[ ! -d .venv ]]; then
   [[ $SKIP_INSTALL == 1 ]] && die ".venv is missing and --skip-install was passed"
   say "creating .venv"
@@ -69,10 +64,11 @@ if ! "$PYTHON" -c "import uvicorn, fastapi, cv2, torch" >/dev/null 2>&1; then
   "$PYTHON" -m pip install --quiet -r backend/requirements.txt
 fi
 
-if ! "$PYTHON" -c "import streamlit" >/dev/null 2>&1; then
-  [[ $SKIP_INSTALL == 1 ]] && die "streamlit is missing and --skip-install was passed"
+command -v npm >/dev/null || die "npm is not installed"
+if [[ ! -d frontend/node_modules ]]; then
+  [[ $SKIP_INSTALL == 1 ]] && die "frontend/node_modules is missing and --skip-install was passed"
   say "installing frontend dependencies"
-  "$PYTHON" -m pip install --quiet -r streamlit-frontend/requirements.txt
+  (cd frontend && npm install --silent)
 fi
 
 if [[ ! -f backend/.env ]]; then
@@ -82,10 +78,8 @@ fi
 
 mkdir -p "$LOG_DIR"
 
-# --- start both --------------------------------------------------------------
-
-# Streamlit calls the API server-side, so it only needs the address.
-export API_URL="http://localhost:$BACKEND_PORT"
+export NEXT_PUBLIC_API_URL="http://localhost:$BACKEND_PORT"
+export CORS_ORIGINS="http://localhost:$FRONTEND_PORT,http://127.0.0.1:$FRONTEND_PORT"
 
 BACKEND_PID=""
 FRONTEND_PID=""
@@ -104,7 +98,6 @@ say "starting backend on :$BACKEND_PORT"
   > >(tee -a "$LOG_DIR/backend.log" | sed -u 's/^/\x1b[2m[api]\x1b[0m /') 2>&1 &
 BACKEND_PID=$!
 
-# The first boot loads torch and the checkpoint, so allow a generous wait.
 say "waiting for the model to load"
 for i in $(seq 120); do
   kill -0 "$BACKEND_PID" 2>/dev/null || die "backend exited — see $LOG_DIR/backend.log"
@@ -120,14 +113,13 @@ case "$HEALTH" in
 esac
 
 say "starting frontend on :$FRONTEND_PORT"
-"$PYTHON" -m streamlit run streamlit-frontend/app.py \
-  --server.port "$FRONTEND_PORT" --server.headless true \
+(cd frontend && exec npx next dev --port "$FRONTEND_PORT") \
   > >(tee -a "$LOG_DIR/frontend.log" | sed -u 's/^/\x1b[2m[web]\x1b[0m /') 2>&1 &
 FRONTEND_PID=$!
 
 for i in $(seq 60); do
   kill -0 "$FRONTEND_PID" 2>/dev/null || die "frontend exited — see $LOG_DIR/frontend.log"
-  curl -sf -o /dev/null "http://127.0.0.1:$FRONTEND_PORT/_stcore/health" && break
+  curl -sf -o /dev/null "http://127.0.0.1:$FRONTEND_PORT" && break
   sleep 1
 done
 

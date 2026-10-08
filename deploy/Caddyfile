@@ -1,0 +1,16 @@
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Same origin for UI and API, so the browser never makes a CORS request.
+	# handle_path strips the /api prefix before proxying.
+	handle_path /api/* {
+		request_body {
+			max_size 110MB
+		}
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

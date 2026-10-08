@@ -54,35 +54,11 @@ def load_model(model_dir):
 
 
 def crop_style():
-    """Which face-crop convention the loaded checkpoint was trained on.
-
-    v1 checkpoints saw MTCNN boxes padded by a fixed margin; v2 checkpoints saw
-    DeepfakeBench-aligned square crops. ``video_processor.crop_face`` asks here
-    so swapping MODEL_DIR between generations needs no other change. With no
-    model loaded the stub predictor ignores the crop anyway.
-    """
     config = getattr(MODEL, "config", None) or {}
     return "aligned" if config.get("version") == 2 else "margin"
 
 
 def risk_bands():
-    """Score thresholds for the loaded checkpoint, falling back to the config.
-
-    A threshold is a property of a model, not of a deployment: it is the point
-    on *that* model's score distribution where the false-positive rate hits an
-    agreed budget. ``machine-learning/calibrate_v2.py`` measures it on the val
-    split under deployment-like degradation and writes it into the
-    checkpoint's ``config.json``, so pointing MODEL_DIR at a new checkpoint
-    moves the operating point with the weights.
-
-    The checkpoint therefore wins over ``RISK_SUSPICIOUS`` / ``RISK_HIGH`` /
-    ``FRAME_THRESHOLD``. Those are v1-era constants that ``backend/.env``
-    already sets to 0.4 / 0.7 / 0.7, so letting the environment win would mean
-    a calibrated checkpoint silently never takes effect — which is the bug this
-    function exists to remove, not a form of it. They remain the fallback for a
-    checkpoint that carries no operating point, and ``RISK_BANDS_SOURCE=env``
-    forces them back for an operator who means it.
-    """
     bands = {
         "risk_suspicious": config.RISK_SUSPICIOUS,
         "risk_high": config.RISK_HIGH,

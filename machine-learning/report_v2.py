@@ -1,21 +1,3 @@
-"""Collect the sweep's evaluations into one comparison, and score ensembles.
-
-Two modes:
-
-``--compare`` (default)
-    Reads every ``runs/eval_*/summary.json`` and ``per_method.csv`` and writes
-    ``runs/v2_comparison.md``: one row per run, ranked by held-out macro AUC —
-    the number the whole exercise is about — with the in-domain, corruption and
-    cross-corpus columns beside it so a run that wins by overfitting is visible.
-
-``--ensemble CKPT [CKPT ...]``
-    Scores several checkpoints on the same frames and reports the mean of their
-    probabilities alongside each member. Architecturally diverse members
-    (a CLIP ViT and a DINOv3 ViT make different mistakes) usually beat the best
-    single model on unseen methods, which is the finding this is here to check
-    rather than assume.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -40,20 +22,10 @@ from evaluate_v2 import (  # noqa: E402
     auc_against_reals, load_any, score, select_frames, video_level,
 )
 
-# Corruptions summarised in the comparison table; the full sweep stays in each
-# run's per_method.csv.
 HEADLINE_CORRUPTIONS = ("clean", "jpeg_q40", "jpeg_q10", "downscale_0.25")
 
 
 def to_markdown(table: pd.DataFrame, decimals: int = 4) -> str:
-    """Markdown table without pulling in ``tabulate``.
-
-    ``DataFrame.to_markdown`` needs an optional dependency that is not in
-    ``requirements.txt``, so the one script whose entire job is to write a
-    markdown report crashed on import the first time it was run for real.
-    Formatting seventeen columns by hand is cheaper than carrying a dependency
-    for it.
-    """
     def cell(value) -> str:
         if isinstance(value, float):
             return "" if pd.isna(value) else f"{value:.{decimals}f}"
@@ -99,10 +71,6 @@ def collect(runs_dir: Path) -> pd.DataFrame:
                     "heldout_macro_auc", float("nan")
                 )
             )
-        # Worst held-out method is the number that decides whether the detector
-        # is trustworthy: an average hides a manipulation it cannot see at all.
-        # The per-family means say the same thing one level up — a run can hold
-        # its overall average while losing a whole generation mechanism.
         per_method_path = summary_path.parent / "per_method.csv"
         if per_method_path.is_file():
             table = pd.read_csv(per_method_path)
@@ -186,9 +154,6 @@ def run_ensemble(checkpoints: list[str], data: str, split: str, device: torch.de
             )
             member_probs[name] = score(model, loader, device, amp)
 
-        # Rank-average rather than a plain mean: the members are calibrated
-        # differently, so averaging raw probabilities lets the most confident
-        # model dominate regardless of whether it is the most correct one.
         stacked = np.stack(list(member_probs.values()))
         ranks = np.stack([pd.Series(p).rank(pct=True).to_numpy() for p in stacked])
         member_probs["ENSEMBLE(mean)"] = stacked.mean(axis=0)

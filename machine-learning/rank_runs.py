@@ -1,20 +1,3 @@
-"""Rank the finished evaluations by held-out AUC and print checkpoint paths.
-
-The sweep leaves one ``runs/eval_*/summary.json`` per configuration. Choosing
-the finalists by hand means reading eleven of them; this prints the ranking, or
-just the top ``--top`` checkpoint directories for a script to consume.
-
-Ranking is on clean held-out macro AUC — mean per-method AUC over the
-manipulations and corpora excluded from training — because that is the only
-column that says anything about a manipulation nobody has seen yet.
-
-The method count is printed beside it and gates ``--top``, because that average
-is only comparable between runs that averaged over the same thing. The v1
-baseline's stored evaluation covers a single manipulation (Celeb-DF synthesis)
-and its 0.84 sits above two v2 runs' 31-method averages while measuring
-something else entirely.
-"""
-
 from __future__ import annotations
 
 import argparse

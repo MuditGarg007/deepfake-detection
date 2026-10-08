@@ -25,8 +25,6 @@ class LiveFrameOut(BaseModel):
     face_found: bool
     fake_probability: float | None
     status: str | None
-    # Everything below is null on the stateless endpoint, which has no session
-    # to smooth against.
     smoothed: float | None = None
     frames_scored: int | None = None
     frames_received: int | None = None
@@ -57,8 +55,6 @@ class FeedbackIn(BaseModel):
 
 class HistoryOut(BaseModel):
     id: int
-    # "upload" or "live". Ids are only unique within a kind - they come from
-    # two different tables.
     kind: str
     filename: str
     fake_probability: float

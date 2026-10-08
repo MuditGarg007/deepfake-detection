@@ -1,42 +1,3 @@
-"""How much does a video actually move? A frame-level detector cannot ask this.
-
-Written to explain the largest defect in the v2 evaluation: SadTalker scores
-0.416 AUC on the best model — below chance — while the same model handles
-hyperreenact (0.959) and mcnet (0.827), which are the same generation family,
-the same source corpus and the same split.
-
-SadTalker animates **one still image** from audio. If the render leaves most of
-the face untouched, then most pixels in any single crop are genuine, and there
-is nothing for a per-frame classifier to find no matter how good its backbone
-is — which is exactly what the numbers show: going from EfficientNet to ViT-B
-to ViT-L moves hyperreenact 0.63 -> 0.93 -> 0.96 and moves SadTalker 0.28 ->
-0.46 -> 0.42.
-
-The measurement here is deliberately not a model. It is the per-pixel standard
-deviation across several aligned crops of the same video — one scalar, no
-weights, no training — plus two controls, because a feature this cheap scoring
-this well is the kind of result that is usually an artifact:
-
-*   **Sampling interval.** The dataset keeps ~8 frames per video, and if
-    SadTalker's happen to be closer together in the source video its frames
-    would differ less for a trivial reason. Reported per method, and the reals
-    can be restricted to a matching window.
-*   **An interval-free statistic.** The mean absolute difference between the
-    two closest frames held has no dependence on how widely the video was
-    sampled.
-
-The result is a *specific* detector, not a general one, and the script prints
-enough to see that: against genuine video the same feature scores 0.43 on
-mcnet, 0.39 on simswap and 0.33 on lia — most manipulations are *more* variable
-than real footage, not less. It detects still-driven rendering and nothing
-else, which is why it belongs as a separate video-level signal rather than
-blended into the model's score.
-
-Usage::
-
-    python machine-learning/temporal_v2.py --data data/processed_v2 --split test
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -55,9 +16,6 @@ if str(ML_DIR) not in sys.path:
 import protocol  # noqa: E402
 
 SIZE = 128
-# The lower-middle block of the crop, where a lip-sync render puts its motion.
-# 40x48 of 128x128 is 11.7% of the pixels, which is the baseline any "share of
-# variation in the mouth" number has to beat to mean anything.
 MOUTH = (slice(80, 120), slice(40, 88))
 MOUTH_AREA_SHARE = (40 * 48) / (SIZE * SIZE)
 
@@ -69,7 +27,6 @@ def frame_index(path: str) -> int:
 
 def video_statistics(root: Path, frame: pd.DataFrame, videos: np.ndarray,
                      max_frames: int) -> pd.DataFrame:
-    """Per-video temporal statistics for the given video ids."""
     rows = []
     for video in videos:
         paths = sorted(frame[frame["video"] == video]["path"])[:max_frames]
@@ -86,7 +43,6 @@ def video_statistics(root: Path, frame: pd.DataFrame, videos: np.ndarray,
             "video": video,
             "spread": float(per_pixel.mean()),
             "mouth_share": float(per_pixel[MOUTH].sum() / (per_pixel.sum() + 1e-9)),
-            # Independent of the sampling interval: the closest pair we hold.
             "adjacent_diff": float(np.abs(stack[1] - stack[0]).mean()),
             "frame_gap": float(np.median(np.diff(indices))) if len(indices) > 1 else 0.0,
         })
@@ -95,7 +51,6 @@ def video_statistics(root: Path, frame: pd.DataFrame, videos: np.ndarray,
 
 def auc_low_is_fake(real: np.ndarray, fake: np.ndarray) -> float:
     truth = np.concatenate([np.zeros(len(real)), np.ones(len(fake))])
-    # Negated: the hypothesis is that *less* variation means fake.
     return float(roc_auc_score(truth, -np.concatenate([real, fake])))
 
 
@@ -141,11 +96,6 @@ def main() -> int:
           f"frame gap {real_stats['frame_gap'].median():.0f}  "
           f"adjacent diff {real_stats['adjacent_diff'].median():.2f}\n")
 
-    # Entire-face synthesis has no video structure — its "videos" are buckets
-    # of unrelated generated images, so a within-video spread over them is a
-    # spread over different people and means nothing. Including them produced a
-    # column of 0.00 AUCs and median frame gaps in the thousands, which is the
-    # measurement telling you it does not apply.
     methods = args.methods or sorted(
         m for m in frame[frame["label"] == "fake"]["method"].unique()
         if args.include_synthesis or protocol.family_for(m) != "synthesis"
@@ -182,7 +132,6 @@ def main() -> int:
     print(f"\nmouth region is {MOUTH_AREA_SHARE:.3f} of the crop, so a "
           f"'mouth' column above that means the motion is concentrated there")
 
-    # Gap-matched control for whichever method separates best.
     best = table.iloc[0]
     lo, hi = np.percentile(
         video_statistics(

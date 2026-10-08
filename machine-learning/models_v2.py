@@ -1,25 +1,3 @@
-"""Backbone zoo for the v2 (generalization-focused) detector.
-
-The v1 model (``models.py``) fine-tuned an ImageNet EfficientNet-B0 end to end on
-a single manipulation family. That reaches ~0.99 AUC in-domain and collapses on
-manipulations it never saw, because full fine-tuning on one forgery type lets the
-backbone overwrite its generic features with method-specific artifacts.
-
-v2 takes the opposite stance, following the cross-dataset deepfake literature
-(UniversalFakeDetect; LNCLIP-DF, arXiv:2503.19683):
-
-* start from a **foundation backbone** (CLIP / DINOv3) whose features were never
-  tuned for a forgery family,
-* keep almost all of it **frozen** and train only LayerNorm affine parameters
-  plus the head (``ln`` mode, ~0.1 M parameters on ViT-L),
-* optionally **L2-normalize** the pooled feature so the classifier lives on a
-  hypersphere, which stops the head from keying on feature magnitude — an axis
-  that shifts hard between datasets.
-
-``full`` and ``head`` modes are kept so the same training script can reproduce
-the v1-style baseline and a pure linear probe for comparison.
-"""
-
 from __future__ import annotations
 
 import math
@@ -29,21 +7,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# Friendly name -> (timm model id, default input size).
 BACKBONES: dict[str, tuple[str, int]] = {
-    # v1 baselines, kept so experiments stay comparable.
     "efficientnet_b0": ("efficientnet_b0", 224),
     "xception": ("legacy_xception", 224),
-    # CLIP image encoders — the backbone family that dominates cross-dataset
-    # deepfake benchmarks.
     "clip_vit_b16": ("vit_base_patch16_clip_224.openai", 224),
     "clip_vit_l14": ("vit_large_patch14_clip_224.openai", 224),
     "clip_vit_l14_datacomp": ("vit_large_patch14_clip_224.datacompxl", 224),
-    # Self-supervised ViTs — different pretraining bias, useful for ensembling.
     "dinov2_vit_b14": ("vit_base_patch14_dinov2.lvd142m", 224),
     "dinov3_vit_b16": ("vit_base_patch16_dinov3.lvd1689m", 224),
     "dinov3_vit_l16": ("vit_large_patch16_dinov3.lvd1689m", 224),
-    # Convolutional counterpart, for architecture diversity in an ensemble.
     "convnext_base_clip": ("convnext_base.clip_laion2b_augreg", 224),
 }
 
@@ -51,19 +23,11 @@ TUNE_MODES = ("full", "ln", "head")
 
 
 def _is_norm_param(name: str) -> bool:
-    """True for LayerNorm/BatchNorm affine parameters anywhere in the backbone."""
     lowered = name.lower()
     return any(key in lowered for key in ("norm", ".ln", "bn."))
 
 
 class HypersphericalHead(nn.Module):
-    """Cosine classifier over an L2-normalized feature.
-
-    Writing the logit as ``scale * cos(theta)`` removes feature norm from the
-    decision, which is the part of the representation that drifts most between
-    datasets and compression levels. ``scale`` is learned but clamped, so the
-    model can still saturate the sigmoid when it is confident.
-    """
 
     def __init__(self, in_features: int, scale: float = 16.0, dropout: float = 0.1):
         super().__init__()
@@ -82,7 +46,6 @@ class HypersphericalHead(nn.Module):
 
 
 class MLPHead(nn.Module):
-    """The v1 head: pooled feature -> 128 -> ReLU -> dropout -> 1 logit."""
 
     def __init__(self, in_features: int, hidden: int = 128, dropout: float = 0.2):
         super().__init__()
@@ -98,7 +61,6 @@ class MLPHead(nn.Module):
 
 
 class Detector(nn.Module):
-    """Backbone (pooled features) + binary head, with a selectable tuning mode."""
 
     def __init__(
         self,
@@ -135,9 +97,6 @@ class Detector(nn.Module):
             for param in self.backbone.parameters():
                 param.requires_grad_(True)
             return
-        # 'ln' and 'head' both freeze the backbone weights; 'ln' re-enables the
-        # normalization affines, which is enough to re-centre the feature
-        # distribution without destroying the pretrained representation.
         for param in self.backbone.parameters():
             param.requires_grad_(False)
         if self.tune == "ln":
@@ -163,7 +122,6 @@ def get_model_v2(name: str, **kwargs) -> Detector:
 
 
 def normalization_for(name: str) -> tuple[tuple[float, ...], tuple[float, ...]]:
-    """Mean/std the backbone was pretrained with — wrong stats cost real AUC."""
     model_id, _ = BACKBONES[name]
     config = timm.get_pretrained_cfg(model_id, allow_unregistered=True)
     mean = tuple(config.mean) if config and config.mean else (0.485, 0.456, 0.406)
