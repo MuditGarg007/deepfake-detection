@@ -1,21 +1,4 @@
 #!/usr/bin/env bash
-# v2 experiment sweep.
-#
-# Each run trains one configuration and evaluates it on the held-out test
-# split. Ordered so the cheap, high-information runs land first: the data/
-# augmentation effect is isolated on the v1 architecture before any of the
-# expensive foundation-model runs start.
-#
-#   bash machine-learning/run_experiments.sh [stage]
-#
-# stage: "core" (the three runs the conclusion depends on), "ablations" (the
-# one-factor-at-a-time ViT-B runs), "robust" (the wide-augmentation retrains
-# that test the JPEG-q10 calibration collapse), "large" (the remaining big
-# backbones), or "all" (all four, in that order).
-#
-# "core" runs first and deliberately duplicates nothing: an interrupted sweep
-# should still leave the control, the main recipe and the best candidate on
-# disk, because those three are what any conclusion rests on.
 
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -50,13 +33,6 @@ run () {
   echo "  trained -> $ckpt"
   grep "^best epoch" "$log"
 
-  # Four corruptions, not the full twelve: the whole sweep costs more in
-  # evaluation than in training otherwise. The finalists get the full sweep.
-  #
-  # --heldout-all-splits because five held-out image-synthesis sets are flat
-  # piles with no video structure, so the identity hash puts each of them
-  # entirely into one split — and for all five that split is not "test". They
-  # were absent from every per-method table until this flag existed.
   $PY machine-learning/evaluate_v2.py --checkpoint "$ckpt" --data "$DATA" \
       --split test --amp --max-per-method 800 --max-real 4000 \
       --heldout-all-splits \
@@ -68,23 +44,18 @@ run () {
 stage="${1:-ablations}"
 
 if [ "$stage" = "core" ] || [ "$stage" = "all" ]; then
-  # v1 architecture, v2 data + augmentation. Isolates how much of the gain is
-  # the training corpus rather than the backbone.
   run effnet_data_only --backbone efficientnet_b0 --tune full --head mlp \
       --augment heavy --sbi-prob 0.25 --lr 1e-4 --batch-size 48 \
       --feature-noise 0 --feature-mixup 0
 
-  # The main v2 recipe at small scale.
   run clipb_full --backbone clip_vit_b16 --tune ln --head hypersphere \
       --augment heavy --sbi-prob 0.25 --lr 1e-3 --batch-size 48
 
-  # The expected best single model.
   run clipl_full --backbone clip_vit_l14 --tune ln --head hypersphere \
       --augment heavy --sbi-prob 0.25 --lr 1e-3 --batch-size 24
 fi
 
 if [ "$stage" = "ablations" ] || [ "$stage" = "all" ]; then
-  # Ablations against clipb_full, one factor at a time.
   run clipb_no_sbi --backbone clip_vit_b16 --tune ln --head hypersphere \
       --augment heavy --sbi-prob 0.0 --lr 1e-3 --batch-size 48
   run clipb_light_aug --backbone clip_vit_b16 --tune ln --head hypersphere \
@@ -99,12 +70,6 @@ if [ "$stage" = "ablations" ] || [ "$stage" = "all" ]; then
 fi
 
 if [ "$stage" = "robust" ] || [ "$stage" = "all" ]; then
-  # Same recipe as clipb_full/clipl_full, with the augmentation floor pushed
-  # below the worst quality expected at inference. "heavy" tops out at JPEG q30
-  # and the measured failure is at q10: AUC degrades gracefully there but the
-  # real false-positive rate blows out from 0.086 to 0.493, which is a
-  # calibration failure, not a discrimination one. If that is purely a
-  # train/test range gap, heavy_wide closes it at no cost on clean data.
   run clipb_heavy_wide --backbone clip_vit_b16 --tune ln --head hypersphere \
       --augment heavy_wide --sbi-prob 0.25 --lr 1e-3 --batch-size 48
   run clipl_heavy_wide --backbone clip_vit_l14 --tune ln --head hypersphere \

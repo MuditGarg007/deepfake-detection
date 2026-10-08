@@ -1,30 +1,3 @@
-"""Manifest-driven multi-source dataset for the v2 detector.
-
-The v1 dataset had one corpus, one manipulation and a directory-per-split
-layout. v2 mixes several corpora and ~30 manipulation methods, and the useful
-questions are per-method ("does it catch InSwapper?"), so everything is driven
-by one CSV with the provenance kept alongside the label:
-
-``path,label,dataset,method,identity,split``
-
-``label``     real / fake
-``dataset``   ffpp, cdf, dfdcp, uadfv, df40
-``method``    real, Deepfakes, Face2Face, inswap, simswap, sadtalker, ...
-``identity``  source-video group, so a split never straddles one person
-``split``     train / val / test / heldout
-
-Two sampler details matter more here than in v1:
-
-*   **Real/fake balance.** Every DF40 method reuses the same pool of real source
-    videos, so naively pooling 25 manipulations gives ~25 fakes per real. Left
-    alone the model just learns the prior. A ``WeightedRandomSampler`` equalises
-    the two classes — and, because SBI relabels some sampled reals as fakes,
-    the real mass is raised to compensate (``balanced_weights``).
-*   **Method balance.** Within the fake class, methods with more frames would
-    otherwise dominate. The same sampler equalises weight across methods, so a
-    method contributes by existing rather than by frame count.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -41,11 +14,10 @@ from sbi import self_blend
 LABEL_TO_TARGET = {"real": 0.0, "fake": 1.0}
 SBI_METHOD = "sbi"
 
-cv2.setNumThreads(0)  # dataloader workers provide the parallelism
+cv2.setNumThreads(0)
 
 
 def read_rgb(path: Path) -> np.ndarray:
-    """Load an image as an RGB uint8 array (cv2 is ~2x faster than PIL here)."""
     image = cv2.imread(str(path), cv2.IMREAD_COLOR)
     if image is None:
         raise FileNotFoundError(f"could not read image {path}")
@@ -53,11 +25,6 @@ def read_rgb(path: Path) -> np.ndarray:
 
 
 class ForgeryDataset(Dataset):
-    """One split of the manifest.
-
-    Yields ``(image_tensor, target, method_index)``; the method index lets the
-    training loop report per-method validation AUC without a second pass.
-    """
 
     def __init__(
         self,
@@ -112,14 +79,8 @@ class ForgeryDataset(Dataset):
         target = self._targets[index]
         method = int(self._methods[index])
 
-        # Self-blended pseudo-fakes are made here rather than pre-rendered to
-        # disk: the point of SBI is that every draw is a different blend, and a
-        # fixed set of them would be memorised like any other finite method.
         landmark = self._landmarks[index]
         if self.sbi_prob > 0 and target == 0.0 and landmark:
-            # torch's RNG, not numpy's global one: DataLoader re-seeds torch per
-            # worker but not numpy, so numpy's global stream would repeat
-            # identically in every worker and collapse SBI's diversity.
             if float(torch.rand(())) < self.sbi_prob:
                 path = self.data_dir / landmark
                 if path.is_file():
@@ -142,30 +103,10 @@ class ForgeryDataset(Dataset):
         )
 
 
-# Above this SBI probability there is no real-mass allocation that balances the
-# classes, because reals would generate more pseudo-fakes than reals. See
-# ``balanced_weights``.
 MAX_BALANCEABLE_SBI_PROB = 0.45
 
 
 def real_mass_for(sbi_prob: float) -> float:
-    """Sampling mass to give the real class so the *post-SBI* split is 50/50.
-
-    SBI turns a sampled real frame into a fake one with probability ``p``, so a
-    naive 50/50 sampler actually trains on ``(1-p)/2`` real and ``(1+p)/2``
-    fake. At ``p = 0.5`` that is 25/75, and the model learns a fake-leaning
-    prior — measured as a 0.459 false-positive rate on real faces at threshold
-    0.5, which is useless in production even though AUC looks fine.
-
-    Solving ``R(1-p) = Rp + (1-R)`` for the real mass ``R`` gives::
-
-        R = 1 / (2 * (1 - p))
-
-    which exceeds 1 once ``p >= 0.5`` — at that point every real frame would
-    have to be sampled and there would be no budget left for real
-    manipulations, so the caller must keep ``p`` below
-    ``MAX_BALANCEABLE_SBI_PROB``.
-    """
     if sbi_prob <= 0:
         return 0.5
     if sbi_prob >= MAX_BALANCEABLE_SBI_PROB:
@@ -177,17 +118,6 @@ def real_mass_for(sbi_prob: float) -> float:
 
 
 def balanced_weights(frame: pd.DataFrame, sbi_prob: float = 0.0) -> np.ndarray:
-    """Per-sample weights equalising real/fake and, inside fake, method.
-
-    Reals are treated as one group so a corpus with many real frames does not
-    outvote the others; fakes are split per ``(dataset, method)`` so each
-    manipulation carries the same total mass.
-
-    ``sbi_prob`` must match the value handed to ``ForgeryDataset``, so the real
-    mass can be raised to compensate for the reals that SBI will relabel as
-    fakes. Only reals that actually carry landmarks can be converted, so the
-    effective conversion rate is scaled by that fraction.
-    """
     weights = np.zeros(len(frame), dtype=np.float64)
 
     is_real = (frame["label"] == "real").to_numpy()
@@ -210,7 +140,6 @@ def balanced_weights(frame: pd.DataFrame, sbi_prob: float = 0.0) -> np.ndarray:
         groups = fake_frame.groupby(["dataset", "method"]).indices
         per_group = (1.0 - real_mass) / len(groups)
         positions = np.flatnonzero(~is_real)
-        # ``groups`` indexes into fake_frame; map back to manifest positions.
         for _, local_indices in groups.items():
             weights[positions[local_indices]] = per_group / len(local_indices)
 
@@ -229,7 +158,6 @@ def build_dataloaders_v2(
     exclude_methods: tuple[str, ...] = (),
     samples_per_epoch: int | None = None,
 ) -> dict[str, DataLoader]:
-    """Train loader (balanced + augmented) and val loader (plain)."""
     train_transform = build_train_transform(
         image_size, backbone_mean, backbone_std, augment_strength
     )

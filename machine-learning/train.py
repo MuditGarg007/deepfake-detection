@@ -1,16 +1,3 @@
-"""T6 — fine-tune one backbone on the face-crop dataset.
-
-Usage::
-
-    python machine-learning/train.py --model efficientnet_b0 --data data/processed \
-        --epochs 15 --batch-size 64 --lr 1e-4 --amp --patience 5 --seed 42
-
-Writes:
-    machine-learning/checkpoints/<model>_<timestamp>/best.pth
-    machine-learning/checkpoints/<model>_<timestamp>/config.json
-    machine-learning/runs/<model>_<timestamp>/log.csv
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -44,7 +31,6 @@ def set_seed(seed: int) -> None:
 
 @torch.no_grad()
 def evaluate_split(model, loader, criterion, device, amp: bool) -> dict[str, float]:
-    """Loss / accuracy / ROC-AUC over a whole loader."""
     model.eval()
     total_loss = 0.0
     seen = 0
@@ -65,7 +51,6 @@ def evaluate_split(model, loader, criterion, device, amp: bool) -> dict[str, flo
     probs = np.concatenate(probabilities)
     truth = np.concatenate(targets)
     accuracy = float(((probs >= 0.5).astype(float) == truth).mean())
-    # A split with a single class present has no defined AUC.
     auc = float(roc_auc_score(truth, probs)) if len(np.unique(truth)) > 1 else float("nan")
     return {"loss": total_loss / seen, "acc": accuracy, "auc": auc}
 
@@ -131,7 +116,6 @@ def main() -> int:
     if device.type == "cuda":
         model = model.to(memory_format=torch.channels_last)
 
-    # Rebalance the loss if the training split is skewed.
     train_counts = counts["train"]
     pos_weight = torch.tensor(
         [train_counts.get("real", 1) / max(train_counts.get("fake", 1), 1)],

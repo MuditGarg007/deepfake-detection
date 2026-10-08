@@ -1,39 +1,3 @@
-"""Choose the operating point against a false-positive budget, not by guessing 0.5.
-
-Every number in the v2 evaluation is reported at threshold 0.5, which is not a
-decision — it is the arbitrary midpoint of a sigmoid whose scale is a learned
-parameter. What a product needs is the opposite direction: *state how often
-calling a genuine video fake is acceptable, then find the score that delivers
-it.*
-
-Three things follow from that framing, and all three are why this is a separate
-pass rather than a line in ``evaluate_v2.py``:
-
-1.  **The threshold is picked on val, never on test.** Held-out methods are the
-    honest generalization number; tuning a threshold against them spends that
-    honesty. Reals from the ``val`` split, fakes from ``val`` only.
-2.  **It is picked under deployment conditions.** A threshold chosen on
-    pristine PNG is wrong on codec output — measured: the ViT-B model's
-    false-positive rate goes 0.086 clean to 0.493 at JPEG q10 while its AUC
-    only falls 0.82 to 0.69. The score distribution shifts bodily. So the real
-    pool is scored under a *mixture* of clean and degraded conditions and the
-    quantile is taken over the mixture, which puts the operating point where
-    the deployed distribution actually sits.
-3.  **Video and frame get separate thresholds.** The backend decides a verdict
-    from the mean of a video's frame scores and separately highlights
-    individual frames; averaging shrinks the spread, so a frame threshold
-    applied to a video mean is not the same budget.
-
-The result is written into the checkpoint's ``config.json`` under
-``operating_point``, which ``backend/services/detector.py`` reads — so pointing
-``MODEL_DIR`` at a new checkpoint moves the thresholds with it instead of
-leaving the v1 constants in place.
-
-Usage::
-
-    python machine-learning/calibrate_v2.py --checkpoint <ckpt> --amp --write
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -54,16 +18,10 @@ from augment import build_corruption, build_eval_transform  # noqa: E402
 from dataset_v2 import ForgeryDataset  # noqa: E402
 from evaluate_v2 import load_any, score  # noqa: E402
 
-# What a frame looks like by the time it reaches the detector: some arrive
-# untouched, most have been through a codec at least once, some have been
-# rescaled. Equal weight on each is a deliberate simplification — the point is
-# that the real pool is not pristine, not that this exact mixture is the true
-# deployment distribution.
 DEPLOYMENT_CONDITIONS = ("clean", "jpeg_q40", "jpeg_q20", "downscale_0.5")
 
 
 def video_of(paths: pd.Series) -> pd.Series:
-    """Video id for a manifest path — the same grouping the backend aggregates on."""
     return paths.map(lambda p: str(Path(p).parent))
 
 
@@ -92,13 +50,11 @@ def pooled(values: dict[str, np.ndarray], conditions: tuple[str, ...]) -> np.nda
 
 
 def video_means(probs: np.ndarray, videos: np.ndarray) -> np.ndarray:
-    """Mean score per video — what ``video_processor.aggregate`` computes."""
     frame = pd.DataFrame({"video": videos, "prob": probs})
     return frame.groupby("video")["prob"].mean().to_numpy()
 
 
 def threshold_at(real_scores: np.ndarray, budget: float) -> float:
-    """Lowest score whose false-positive rate on ``real_scores`` is <= ``budget``."""
     if budget <= 0:
         return 1.0
     if budget >= 1:
@@ -163,10 +119,6 @@ def main() -> int:
         return group.iloc[rng.choice(len(group), limit, replace=False)]
 
     reals = cap(frame[frame["label"] == "real"], args.max_real)
-    # Held-out fakes are excluded here as well as from the threshold search:
-    # the recall printed beside the threshold should be a number this procedure
-    # did not get to see, and mixing held-out methods into it would make the
-    # calibration report quietly optimistic.
     fakes = frame[(frame["label"] == "fake") & (frame["group"] != "heldout")]
     fakes = pd.concat([cap(group, args.max_per_method)
                        for _, group in fakes.groupby("method")])
@@ -213,9 +165,6 @@ def main() -> int:
         if label == "deployment":
             chosen = {**video_thresholds, **frame_thresholds}
 
-    # Per-condition false-positive rate at the chosen thresholds. This is the
-    # table that says whether the operating point survives compression, which
-    # is the failure the whole exercise exists to fix.
     print("\nfalse-positive rate at the chosen thresholds, by condition:")
     per_condition = {}
     for condition in conditions:

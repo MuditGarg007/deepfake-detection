@@ -18,10 +18,6 @@ MEDIA_TYPES = {
 router = APIRouter(tags=["analysis"])
 
 SELECT_BY_ID = "SELECT * FROM analyses WHERE id = %s"
-# Uploads and live sessions are separate tables - a live session has no
-# filename, no storage path and a duration instead of a suspicious region - so
-# history unions them into one stream and labels each row with its kind. Ids
-# are only unique within a kind.
 SELECT_HISTORY = """
 SELECT * FROM (
     SELECT id, 'upload' AS kind, filename, storage_path,

@@ -1,15 +1,3 @@
-"""Download the v2 (robustness) corpus: DeepfakeBench real+classic-fake frames
-plus a selection of DF40 modern-manipulation frames.
-
-Everything lands as zips in ``data/dl``; ``build_dataset_v2.py`` unpacks them.
-
-Usage::
-
-    python machine-learning/download_v2.py --group bench
-    python machine-learning/download_v2.py --group df40_train
-    python machine-learning/download_v2.py --group df40_test
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -24,31 +12,20 @@ from huggingface_hub import hf_hub_download  # noqa: E402
 
 OUT = Path("data/dl")
 
-# DeepfakeBench-preprocessed frames. These supply the *real* face crops, which
-# must come from the same alignment pipeline as the DF40 fakes below or the
-# model learns the crop convention instead of the forgery.
 BENCH_REPO = "Ella4839/DeepfakeBench"
 BENCH_FILES = ["Celeb-DF-v2.zip", "FaceForensics++.zip", "DFDCP.zip", "UADFV.zip"]
 
-# DF40 manipulations kept for training (held-in methods).
 DF40_TRAIN_REPO = "ManhQuangAI/DF40_train"
 DF40_TRAIN_FILES = [
-    # face swap
     "faceswap.zip", "blendface.zip", "facedancer.zip", "fsgan.zip", "mobileswap.zip",
-    # face reenactment
     "fomm.zip", "facevid2vid.zip", "lia.zip", "tpsm.zip", "wav2lip.zip",
-    # entire face synthesis
     "StyleGAN2.zip", "ddim.zip", "VQGAN.zip", "DiT.zip",
 ]
 
-# DF40 manipulations held out entirely — the unseen-method test set.
 DF40_TEST_REPO = "ManhQuangAI/df-40-test-full"
 DF40_TEST_FILES = [
-    # modern face swaps never seen in training
     "inswap.zip", "simswap.zip", "uniface.zip", "e4s.zip", "deepfacelab.zip",
-    # modern talking-head / reenactment
     "sadtalker.zip", "heygen_new.zip", "hyperreenact.zip", "mcnet.zip",
-    # modern generative synthesis
     "SiT.zip", "StyleGAN3.zip", "MidJourney.zip", "CollabDiff.zip",
     "starganv2.zip", "styleclip.zip", "whichfaceisreal.zip", "stargan.zip",
 ]
@@ -92,7 +69,7 @@ def main() -> int:
                 try:
                     fetch(repo, filename, out)
                     break
-                except Exception as exc:  # network flake — retry
+                except Exception as exc:
                     print(f"  !! {filename} attempt {attempt + 1}: {exc}", flush=True)
                     time.sleep(10)
             else:

@@ -1,5 +1,3 @@
-"""T4 — dataset + dataloaders over the preprocessed face crops."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,14 +9,12 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
 IMAGE_SIZE = 224
-# ImageNet statistics — required because the backbones are ImageNet-pretrained.
 MEAN = (0.485, 0.456, 0.406)
 STD = (0.229, 0.224, 0.225)
 LABEL_TO_TARGET = {"real": 0.0, "fake": 1.0}
 
 
 def build_transform(train: bool) -> transforms.Compose:
-    """Train-time augmentation (roadmap T4) or plain eval preprocessing."""
     steps: list = [transforms.Resize((IMAGE_SIZE, IMAGE_SIZE))]
     if train:
         steps += [
@@ -31,10 +27,6 @@ def build_transform(train: bool) -> transforms.Compose:
 
 
 class FaceDataset(Dataset):
-    """Face crops for one split, read from ``manifest.csv``.
-
-    Yields ``(image_tensor, target)`` where target is 1.0 for fake, 0.0 for real.
-    """
 
     def __init__(self, data_dir: str | Path, split: str, train: bool | None = None):
         self.data_dir = Path(data_dir)
@@ -70,7 +62,6 @@ def build_dataloaders(
     num_workers: int = 4,
     splits: tuple[str, ...] = ("train", "val", "test"),
 ) -> dict[str, DataLoader]:
-    """DataLoader per split; only the train loader shuffles and augments."""
     loaders: dict[str, DataLoader] = {}
     for split in splits:
         dataset = FaceDataset(data_dir, split)

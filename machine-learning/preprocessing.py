@@ -1,23 +1,3 @@
-"""T3 — build the face-crop dataset from raw FaceForensics++ videos.
-
-Pipeline (docs/ml-roadmap.md §T3, docs/plan.md §5):
-
-1. Split at the **identity** level 70/15/15 (see ``identity_group``) so neither
-   frames nor source identities are shared between splits.
-2. Sample frames at ``--fps`` (default 5), capped at ``--max-frames`` per video
-   (uniform subsample when the video is longer).
-3. Detect faces with MTCNN; keep detections at confidence >= ``--conf`` and take
-   the largest box when a frame has several faces.
-4. Crop with a ``--margin`` px border and resize to 224x224.
-5. Write JPEGs to ``data/processed/{split}/{label}/`` and append to
-   ``data/processed/manifest.csv``.
-
-Usage::
-
-    python machine-learning/preprocessing.py --raw data/raw --out data/processed \
-        --fps 5 --max-frames 50 --margin 20 --conf 0.95 --seed 42
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -34,18 +14,13 @@ import torch
 from tqdm import tqdm
 
 CROP_SIZE = 224
-# Raw class directory name -> dataset label. The Hugging Face mirror of FF++ c23
-# uses these folder names; --real-dir / --fake-dir override them.
 DEFAULT_REAL_DIR = "Real"
 DEFAULT_FAKE_DIR = "Deepfakes"
 
-# OpenCV spawns its own threads per VideoCapture; the decoder pool below already
-# provides parallelism, so keep each capture single-threaded.
 cv2.setNumThreads(1)
 
 
 def find_videos(raw_dir: Path, real_dir: str, fake_dir: str) -> dict[str, list[Path]]:
-    """Return ``{"real": [...], "fake": [...]}`` sorted video paths."""
     videos: dict[str, list[Path]] = {}
     for label, name in (("real", real_dir), ("fake", fake_dir)):
         candidates = [p for p in raw_dir.rglob(name) if p.is_dir()]
@@ -61,20 +36,12 @@ def find_videos(raw_dir: Path, real_dir: str, fake_dir: str) -> dict[str, list[P
 
 
 def identity_group(path: Path) -> str:
-    """Source-identity key for a FaceForensics++ video.
-
-    Real clips are named ``033.mp4``; the Deepfakes clip that swaps a face onto
-    that clip is ``033_097.mp4``. Both map to group ``033``, so splitting on this
-    key keeps every clip of one identity inside a single split — a per-video
-    split alone would leak an identity from train into test.
-    """
     return path.stem.split("_")[0]
 
 
 def split_videos(
     paths: list[Path], seed: int, ratios: tuple[float, float, float]
 ) -> dict[Path, str]:
-    """Assign each video to train/val/test, splitting whole identity groups."""
     groups: dict[str, list[Path]] = {}
     for path in paths:
         groups.setdefault(identity_group(path), []).append(path)
@@ -99,7 +66,6 @@ def split_videos(
 
 
 def sample_indices(total: int, src_fps: float, target_fps: float, cap: int) -> list[int]:
-    """Frame indices at ``target_fps``, uniformly thinned to at most ``cap``."""
     step = max(1, round(src_fps / target_fps)) if src_fps > 0 else 1
     indices = list(range(0, total, step))
     if len(indices) > cap:
@@ -109,7 +75,6 @@ def sample_indices(total: int, src_fps: float, target_fps: float, cap: int) -> l
 
 
 def decode_video(path: Path, target_fps: float, cap: int) -> list[tuple[int, np.ndarray]]:
-    """Return ``[(frame_index, rgb_frame), ...]`` sampled from the video."""
     capture = cv2.VideoCapture(str(path))
     try:
         total = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -121,7 +86,6 @@ def decode_video(path: Path, target_fps: float, cap: int) -> list[tuple[int, np.
         idx = 0
         last_wanted = max(wanted) if wanted else -1
         while idx <= last_wanted:
-            # grab() skips decoding for frames we do not need.
             if not capture.grab():
                 break
             if idx in wanted:
@@ -135,7 +99,6 @@ def decode_video(path: Path, target_fps: float, cap: int) -> list[tuple[int, np.
 
 
 def prefetch(paths: list[Path], target_fps: float, cap: int, workers: int, depth: int):
-    """Yield ``(path, frames)`` while a thread pool decodes ahead of the GPU."""
     results: queue.Queue = queue.Queue(maxsize=depth)
     work: queue.Queue = queue.Queue()
     for path in paths:
@@ -149,7 +112,7 @@ def prefetch(paths: list[Path], target_fps: float, cap: int, workers: int, depth
                 return
             try:
                 results.put((path, decode_video(path, target_fps, cap)))
-            except Exception as exc:  # a corrupt video must not kill the run
+            except Exception as exc:
                 results.put((path, exc))
 
     threads = [threading.Thread(target=worker, daemon=True) for _ in range(workers)]
@@ -162,7 +125,6 @@ def prefetch(paths: list[Path], target_fps: float, cap: int, workers: int, depth
 
 
 def largest_face(boxes: np.ndarray, probs: np.ndarray, conf: float) -> np.ndarray | None:
-    """Largest box among detections above ``conf``, or None."""
     keep = [i for i, p in enumerate(probs) if p is not None and p >= conf]
     if not keep:
         return None
@@ -173,7 +135,6 @@ def largest_face(boxes: np.ndarray, probs: np.ndarray, conf: float) -> np.ndarra
 
 
 def crop_face(frame: np.ndarray, box: np.ndarray, margin: int) -> np.ndarray | None:
-    """Crop ``box`` with ``margin`` px of context and resize to 224x224."""
     height, width = frame.shape[:2]
     x1, y1, x2, y2 = (int(round(float(v))) for v in box)
     x1 = max(0, x1 - margin)
@@ -218,8 +179,6 @@ def main() -> int:
         labels.update({p: label for p in paths})
         print(f"{label}: {len(paths)} videos")
 
-    # One split over both classes at once, so an identity present as both a real
-    # and a fake clip cannot straddle two splits.
     splits = split_videos(list(labels), args.seed, (0.70, 0.15, 0.15))
 
     for split in ("train", "val", "test"):
@@ -241,8 +200,6 @@ def main() -> int:
         writer = csv.writer(handle)
         writer.writerow(["video", "split", "label", "frame_idx", "path"])
 
-        # Prefetch depth == worker count: decoded frames are raw uint8 arrays, so a
-        # deeper queue costs hundreds of MB of RAM per queued 1080p video.
         stream = prefetch(ordered, args.fps, args.max_frames, args.workers, args.workers)
         for path, frames in tqdm(stream, total=len(ordered), desc="videos"):
             if isinstance(frames, Exception):

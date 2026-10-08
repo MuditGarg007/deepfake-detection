@@ -1,0 +1,12 @@
+# Build context for deploy/backend.Dockerfile is the repo root. Allowlist only
+# what the API needs at runtime: data/, .venv/, the frontend and the v2
+# checkpoints (several GB) never reach the Docker daemon.
+*
+!backend/
+!machine-learning/*.py
+!machine-learning/checkpoints/efficientnet_b0_20260901_204509/
+
+backend/.env
+backend/app.db
+backend/uploads/
+**/__pycache__/

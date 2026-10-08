@@ -1,26 +1,3 @@
-"""Cross-method / cross-dataset / corruption evaluation.
-
-Three tables, because a single number hides exactly the failure this project
-has:
-
-1.  **Per-method AUC** — every manipulation scored against the shared pool of
-    real frames, split into held-in, val-unseen and held-out. The held-out
-    column is the only one that says anything about a manipulation nobody has
-    seen yet.
-2.  **Per-dataset AUC** — cross-corpus behaviour (Celeb-DF-v2, DFDCP, UADFV).
-3.  **Corruption sweep** — AUC under JPEG, downscale, blur and noise, on the
-    held-out methods. A detector that only works on pristine PNG is not a
-    detector for video that has been through a codec.
-
-Handles both v1 checkpoints (``config.json`` with ``model``) and v2 ones
-(``config.json`` with ``version: 2``), so the comparison is apples to apples.
-
-Usage::
-
-    python machine-learning/evaluate_v2.py --checkpoint machine-learning/checkpoints/<run> \
-        --data data/processed_v2 --split test
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -44,7 +21,6 @@ from dataset_v2 import ForgeryDataset  # noqa: E402
 
 
 def load_any(checkpoint_dir: str | Path, device: torch.device):
-    """Load a v1 or v2 checkpoint and return ``(model, config, mean, std, size)``."""
     directory = Path(checkpoint_dir)
     with open(directory / "config.json", encoding="utf-8") as handle:
         config = json.load(handle)
@@ -65,7 +41,6 @@ def load_any(checkpoint_dir: str | Path, device: torch.device):
 
         model = get_model(config["model"], pretrained=False)
         model.load_state_dict(state)
-        # v1 trained on ImageNet statistics at 224.
         mean, std = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
         size = 224
 
@@ -86,7 +61,6 @@ def score(model, loader, device, amp: bool) -> np.ndarray:
 
 
 def auc_against_reals(probs: np.ndarray, frame: pd.DataFrame, key: str) -> pd.DataFrame:
-    """AUC / AP / accuracy for each value of ``key``, versus all real frames."""
     is_real = (frame["label"] == "real").to_numpy()
     real_scores = probs[is_real]
     if not len(real_scores):
@@ -118,21 +92,6 @@ def auc_against_reals(probs: np.ndarray, frame: pd.DataFrame, key: str) -> pd.Da
 def select_frames(manifest: pd.DataFrame, split: str, max_per_method: int,
                   max_real: int, heldout_all_splits: bool = False,
                   seed: int = 0) -> pd.DataFrame:
-    """Reals from ``split``; fakes from ``split``, optionally widened.
-
-    Subsampling per method and for the reals keeps the corruption sweep
-    tractable — twelve corruptions over the full test split is an hour of GPU
-    for a number that does not move.
-
-    Five held-out manipulations (stargan, styleclip, MidJourney,
-    whichfaceisreal, starganv2) are flat image sets with no video structure, so
-    the identity hash drops each of them whole into a single split — and for
-    all five that split is not ``test``, which meant they were never scored at
-    all. ``heldout_all_splits`` pulls held-out *fakes* from every split. That
-    is sound precisely because held-out methods are never trained on; the reals
-    stay inside ``split``, since those *are* trained on and widening them would
-    be leakage.
-    """
     rng = np.random.default_rng(seed)
 
     def cap(group: pd.DataFrame, limit: int) -> pd.DataFrame:
@@ -157,12 +116,6 @@ def select_frames(manifest: pd.DataFrame, split: str, max_per_method: int,
 
 
 def video_level(probs: np.ndarray, frame: pd.DataFrame) -> dict[str, float]:
-    """AUC after averaging frame scores within a video.
-
-    This is how the backend actually decides, so it is the number that
-    corresponds to product behaviour; it is normally a few points above the
-    frame-level AUC.
-    """
     work = frame.copy()
     work["prob"] = probs
     work["video"] = work["path"].map(lambda p: str(Path(p).parent))

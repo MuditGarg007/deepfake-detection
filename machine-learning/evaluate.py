@@ -1,15 +1,3 @@
-"""T7 — test-set metrics and plots for a trained checkpoint.
-
-Usage::
-
-    python machine-learning/evaluate.py \
-        --checkpoint machine-learning/checkpoints/efficientnet_b0_<ts> \
-        --data data/processed
-
-Writes into ``machine-learning/runs/<run_name>/``:
-    metrics.json, roc_curve.png, confusion_matrix.png, thresholds.csv
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -48,7 +36,6 @@ from inference import load_model  # noqa: E402
 
 @torch.no_grad()
 def collect_predictions(model, loader, device, amp: bool):
-    """Return ``(probabilities, targets)`` over the whole loader."""
     probabilities: list[np.ndarray] = []
     targets: list[np.ndarray] = []
     for images, target in tqdm(loader, desc="test"):
@@ -62,11 +49,10 @@ def collect_predictions(model, loader, device, amp: bool):
 
 @torch.no_grad()
 def measure_latency(model, device, amp: bool, runs: int = 100) -> float:
-    """Mean single-image forward time in milliseconds."""
     sample = torch.randn(1, 3, 224, 224, device=device)
     if device.type == "cuda":
         sample = sample.to(memory_format=torch.channels_last)
-    for _ in range(10):  # warm up kernels / autotuning
+    for _ in range(10):
         with torch.autocast(device.type, dtype=torch.float16, enabled=amp):
             model(sample)
     if device.type == "cuda":
@@ -114,7 +100,6 @@ def plot_confusion(matrix, path: Path, title: str) -> None:
 
 
 def write_thresholds(truth, probs, path: Path) -> None:
-    """Precision/recall/F1/accuracy per threshold — feeds Phase 2's risk cutoffs."""
     precision, recall, thresholds = precision_recall_curve(truth, probs)
     with open(path, "w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)

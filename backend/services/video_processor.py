@@ -25,7 +25,6 @@ class NoFacesError(VideoProcessingError):
 SAMPLE_FPS = 5
 MAX_FRAMES = 100
 FACE_MARGIN = 20
-# v2 ("aligned") crop geometry — see crop_face.
 ALIGNED_SCALE = 1.4
 ALIGNED_RISE = 0.10
 FACE_CONF = 0.95
@@ -84,20 +83,6 @@ def largest_face(boxes, probs):
 
 
 def crop_face(frame, box, style=None):
-    """Crop the face out of a frame in whichever convention the model expects.
-
-    ``margin`` (v1) pads the MTCNN box by a fixed 20 px. That is
-    resolution-dependent: the same face fills a different fraction of the crop
-    in a 360p clip and a 1080p one.
-
-    ``aligned`` (v2) reproduces the DeepfakeBench framing the v2 checkpoints
-    were trained on: a square of side ``1.4 * max(box_w, box_h)`` centred on
-    the box centre, raised by ``0.10 * side`` so the forehead is included. The
-    constants were fitted by matching MTCNN boxes on the raw FF++ videos
-    against the corresponding DeepfakeBench crops (median normalized
-    cross-correlation 0.79 over 25 videos). Feeding v2 the ``margin`` crop
-    instead costs accuracy for no reason — the model never saw that framing.
-    """
     if style is None:
         style = detector.crop_style()
     h, w = frame.shape[:2]
@@ -119,9 +104,6 @@ def crop_face(frame, box, style=None):
     right = int(round(centre_x + side / 2))
     bottom = int(round(centre_y + side / 2))
 
-    # The square routinely runs off the frame for a face near an edge. Reflect
-    # rather than clip: clipping would change the framing, which is the one
-    # thing this branch exists to keep constant.
     region = frame[max(0, top):min(h, bottom), max(0, left):min(w, right)]
     if region.size == 0:
         return None
@@ -132,11 +114,6 @@ def crop_face(frame, box, style=None):
 
 
 def detect_box(rgb, face_detector=None):
-    """Return the box of the largest confident face in one RGB frame, or None.
-
-    Split out from detect_face so the live path can hold on to a box and reuse
-    it for a few frames instead of running MTCNN on every one.
-    """
     face_detector = face_detector or get_mtcnn()
     boxes, probs = face_detector.detect(rgb)
     if boxes is None or len(boxes) == 0:
@@ -148,11 +125,6 @@ def detect_box(rgb, face_detector=None):
 
 
 def detect_face(rgb, face_detector=None):
-    """Return the largest confident face crop in one RGB frame, or None.
-
-    Shared by the whole-video path, which batches the crops it collects, and
-    by score_frame, which has exactly one frame to work with.
-    """
     box = detect_box(rgb, face_detector)
     if box is None:
         return None
@@ -218,10 +190,6 @@ def suspicious_region(scores):
 
 
 def score_frame(rgb, timestamp=0.0, face_detector=None):
-    """Detect the largest face in one RGB frame and score it.
-
-    Returns None when no face clears FACE_CONF.
-    """
     crop = detect_face(rgb, face_detector)
     if crop is None:
         return None
@@ -229,7 +197,6 @@ def score_frame(rgb, timestamp=0.0, face_detector=None):
 
 
 def aggregate(scores):
-    """Mean probability, risk status and suspicious region for a run of frames."""
     fake_probability = sum(score.fake_probability for score in scores) / len(scores)
     start, end = suspicious_region(scores)
     return round(fake_probability, 4), risk_status(fake_probability), start, end
@@ -240,8 +207,6 @@ def process_video(path, filename=None):
     if not frames:
         raise UnreadableVideoError("video contains no readable frames")
 
-    # Detection is per frame, but scoring stays batched - predict_batch is
-    # meaningfully faster than one call per crop.
     face_detector = get_mtcnn()
     timestamps = []
     crops = []

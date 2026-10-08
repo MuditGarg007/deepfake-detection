@@ -1,32 +1,3 @@
-"""Per-frame score distributions, so a weak method can be told from an inverted one.
-
-``evaluate_v2.py`` answers "how well does it rank?"; this answers "where does it
-put the scores?". The distinction decided the largest open question in the v2
-work: SadTalker scored 0.4646 AUC with 2% recall at threshold 0.5, and an AUC
-below 0.5 has exactly two readings —
-
-*   the score distribution is **flat** (the model has no signal, and the number
-    is 0.46 rather than 0.50 by sampling noise), or
-*   it is **inverted** (the model has signal and is reading it backwards: these
-    fakes score *lower* than genuine faces).
-
-They call for opposite fixes. A flat method needs a cue the corpus does not
-contain. An inverted method means a cue the corpus does contain is actively
-firing the wrong way, which is a much stronger statement — and one that
-generalises to every method sharing that generation mechanism.
-
-So this script reports, per method and per generation family
-(``protocol.FAMILY``): the score quantiles against the shared real pool, the
-separation in units of the real pool's own spread, and a text histogram. It
-writes ``scores.csv`` with one row per frame, so any further question can be
-answered without another GPU pass.
-
-Usage::
-
-    python machine-learning/diagnose_v2.py \
-        --checkpoint machine-learning/checkpoints/<run> --data data/processed_v2
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -53,7 +24,6 @@ BLOCKS = " ▁▂▃▄▅▆▇█"
 
 
 def histogram(values: np.ndarray, bins: int = 20) -> str:
-    """A one-line text histogram of scores over [0, 1]."""
     counts, _ = np.histogram(values, bins=bins, range=(0.0, 1.0))
     if not counts.max():
         return " " * bins
@@ -63,13 +33,9 @@ def histogram(values: np.ndarray, bins: int = 20) -> str:
 
 
 def summarise(frame: pd.DataFrame, probs: np.ndarray, key: str) -> pd.DataFrame:
-    """Distribution statistics for every value of ``key`` against the reals."""
     is_real = (frame["label"] == "real").to_numpy()
     real_scores = probs[is_real]
     real_median = float(np.median(real_scores))
-    # The real pool's own interquartile range is the natural yardstick: a shift
-    # measured in raw probability means nothing when the whole distribution is
-    # squashed into the bottom decile.
     real_iqr = float(np.subtract(*np.percentile(real_scores, [75, 25]))) or 1e-6
 
     rows = [{
@@ -108,30 +74,15 @@ def summarise(frame: pd.DataFrame, probs: np.ndarray, key: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-# AUC is the probability that a random fake outranks a random real, so it — not
-# the median shift — is what says which side of chance a method falls on. With
-# 800 fakes against 4,000 reals the standard error is around 0.01, so a method
-# five points off 0.5 is off it for real. The bands below are deliberately
-# wider than that: the question this answers is "what kind of failure is this",
-# and that needs an effect size, not a p-value.
 VERDICT_BANDS = (
-    (0.90, "working"),   # usable
-    (0.70, "weak"),      # ranks better than chance, misses a lot
-    (0.55, "poor"),      # barely above chance
-    (0.45, "flat"),      # indistinguishable from the real pool
+    (0.90, "working"),
+    (0.70, "weak"),
+    (0.55, "poor"),
+    (0.45, "flat"),
 )
 
 
 def verdict(row: pd.Series) -> str:
-    """What kind of failure this is, from the AUC band it falls in.
-
-    ``flat`` and ``INVERTED`` are the two readings of a sub-chance AUC and they
-    call for opposite fixes: a flat method needs a cue the corpus does not
-    contain, while an inverted one means a cue the corpus *does* contain is
-    firing backwards. ``shift_iqr`` is printed beside the verdict because the
-    two cases also differ in the median — a flat method sits on top of the real
-    pool, an inverted one sits below it.
-    """
     if row["family"] == "real":
         return ""
     for floor, label in VERDICT_BANDS:

@@ -1,27 +1,3 @@
-"""Train the v2 generalization-focused detector.
-
-Differences from ``train.py`` that matter for cross-method performance:
-
-*   **Model selection on unseen methods.** The checkpoint is chosen by macro
-    AUC over ``protocol.VAL_UNSEEN`` — manipulations excluded from training —
-    not by in-domain val AUC. Selecting in-domain reliably picks the epoch that
-    has specialised hardest on the training manipulations.
-*   **Balanced sampling.** Real/fake and per-method mass are equalised by the
-    sampler (see ``dataset_v2.balanced_weights``) rather than by a loss weight,
-    because the imbalance here is ~25:1 and across many groups.
-*   **Latent augmentation.** Optional Gaussian noise and mixup applied to the
-    pooled feature before the head (LNCLIP-DF, arXiv:2503.19683). With a frozen
-    backbone the head can otherwise memorise a handful of feature directions
-    that happen to separate the training methods.
-*   **Warmup + cosine schedule at a high LR.** LN-tuning trains ~0.1 M
-    parameters; the 1e-4 that suits full fine-tuning barely moves them.
-
-Usage::
-
-    python machine-learning/train_v2.py --backbone clip_vit_l14 --tune ln \
-        --data data/processed_v2 --epochs 6 --batch-size 32 --lr 1e-3 --amp
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -60,13 +36,6 @@ def set_seed(seed: int) -> None:
 
 def macro_auc(probs: np.ndarray, targets: np.ndarray, methods: np.ndarray,
               method_names: list[str]) -> tuple[float, dict[str, float]]:
-    """Mean of per-method AUC, each method scored against *all* real frames.
-
-    Pooled AUC over a mixed-method split is dominated by whichever method has
-    the most frames. Scoring each manipulation against the shared real pool and
-    averaging gives every method one vote, which is the quantity that actually
-    tracks "works on something new".
-    """
     real_mask = targets == 0.0
     real_scores = probs[real_mask]
     per_method: dict[str, float] = {}
@@ -115,12 +84,6 @@ def run_eval(model, loader, device, amp: bool) -> dict:
 
 def latent_augment(features: torch.Tensor, targets: torch.Tensor,
                    noise: float, mixup: float):
-    """Gaussian jitter + same-class mixup on the pooled feature.
-
-    Mixup is restricted to pairs with the same label so the target stays a hard
-    0/1 — the goal is to fill in the feature manifold between examples of a
-    class, not to soften the decision boundary.
-    """
     if noise > 0:
         features = features + noise * torch.randn_like(features) * features.norm(
             dim=-1, keepdim=True
@@ -142,8 +105,6 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler, scaler,
     total_loss = 0.0
     correct = 0
     seen = 0
-    # Redirected to a log file, a live progress bar writes thousands of
-    # carriage-return frames that make the log unreadable.
     progress = tqdm(
         loader, desc="train", leave=False,
         disable=not sys.stderr.isatty(), mininterval=10.0,
@@ -173,7 +134,6 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler, scaler,
 
 
 def build_loaders(args, mean, std):
-    """Train / in-domain val / unseen-method val loaders from one manifest."""
     manifest = Path(args.data) / "manifest.csv"
     import pandas as pd
 
@@ -181,8 +141,6 @@ def build_loaders(args, mean, std):
 
     train_frame = frame[(frame["split"] == "train") & (frame["group"] == "heldin")]
     val_frame = frame[(frame["split"] == "val") & (frame["group"] == "heldin")]
-    # The unseen-method val split reuses the same real frames as in-domain val,
-    # so the two AUCs differ only in which manipulations they contain.
     unseen_frame = frame[
         (frame["split"] == "val")
         & ((frame["group"] == "valunseen") | (frame["label"] == "real"))
@@ -280,9 +238,6 @@ def main() -> int:
           f"{model.n_trainable() / 1e6:.3f}M trainable / {total / 1e6:.1f}M total",
           flush=True)
 
-    # Label smoothing implemented by pulling the targets off 0/1, which for BCE
-    # is equivalent and keeps the logit from being pushed to infinity on the
-    # training manipulations.
     criterion = nn.BCEWithLogitsLoss()
     smoothing = args.label_smoothing
 
