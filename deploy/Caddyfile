@@ -1,4 +1,7 @@
-{$DOMAIN} {
+# Site block for the host Caddy (/etc/caddy/Caddyfile), which also serves other
+# projects. Append it there, then `caddy validate --config /etc/caddy/Caddyfile`
+# before `systemctl reload caddy`.
+deepguard.muditgarg.xyz {
 	encode zstd gzip
 
 	# Same origin for UI and API, so the browser never makes a CORS request.
@@ -7,10 +10,10 @@
 		request_body {
 			max_size 110MB
 		}
-		reverse_proxy api:8000
+		reverse_proxy 127.0.0.1:8100
 	}
 
 	handle {
-		reverse_proxy web:3000
+		reverse_proxy 127.0.0.1:3100
 	}
 }
