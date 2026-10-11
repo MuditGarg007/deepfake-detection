@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import config
+from .auth import RequireUser
 from .database import init_schema
 from .routes import analyze, history, live
 from .services import detector
@@ -22,6 +23,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Deepfake Detection & Alert System", lifespan=lifespan)
 
+# Added before CORS so CORS wraps it and 401s still carry CORS headers.
+app.add_middleware(RequireUser)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.CORS_ORIGINS,

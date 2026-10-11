@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS analyses (
     suspicious_end    DOUBLE PRECISION,
     frame_scores      JSONB NOT NULL,
     user_feedback     TEXT,
+    user_id           TEXT,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 )
 """
@@ -29,13 +30,18 @@ CREATE TABLE IF NOT EXISTS live_sessions (
     peak_probability  DOUBLE PRECISION NOT NULL,
     status            TEXT NOT NULL,
     timeline          JSONB NOT NULL,
-    user_feedback     TEXT
+    user_feedback     TEXT,
+    user_id           TEXT
 )
 """
 
 OLD_COLUMNS = [
     "ALTER TABLE analyses ADD COLUMN IF NOT EXISTS storage_path TEXT",
     "ALTER TABLE analyses ADD COLUMN IF NOT EXISTS user_feedback TEXT",
+    # Rows from before sign-in existed keep a NULL owner and are visible to
+    # no signed-in user.
+    "ALTER TABLE analyses ADD COLUMN IF NOT EXISTS user_id TEXT",
+    "ALTER TABLE live_sessions ADD COLUMN IF NOT EXISTS user_id TEXT",
 ]
 
 

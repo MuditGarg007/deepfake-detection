@@ -38,7 +38,8 @@ Copy `backend/.env.example` to `backend/.env` and fill it in:
 | `RISK_HIGH` | `0.7` | Above this → `HIGH_RISK`; in between → `SUSPICIOUS`. |
 | `FRAME_THRESHOLD` | `0.7` | A frame at/above this counts toward the suspicious region. |
 | `MAX_UPLOAD_MB` | `200` | Uploads larger than this are rejected with 413. |
-| `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated origins allowed by CORS (Phase 5 frontend). |
+| `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated origins allowed by CORS (Phase 5 frontend). Clerk session tokens minted for any other origin are rejected. |
+| `CLERK_PUBLISHABLE_KEY` | *(empty)* | The Clerk publishable key the frontend uses. When set, every endpoint except `/health` and the docs needs a signed-in user. When empty, the API is open and all data is shared. |
 
 For Neon: create a free project at [neon.tech](https://neon.tech) and copy the
 connection string —
@@ -66,6 +67,14 @@ which mode is active via `model_loaded`.
 ---
 
 ## 2. Endpoints
+
+With `CLERK_PUBLISHABLE_KEY` set, every endpoint below except `/health` needs a
+Clerk session token, sent as `Authorization: Bearer <token>` or in Clerk's
+`__session` cookie (that is how the frame `<img>` authenticates). The token is
+checked against the instance's JWKS before the request body is read
+(`backend/auth.py`). Analyses and live sessions belong to the user who created
+them: history lists only their own, and anyone else's id returns 404. Rows from
+before sign-in was added have no owner and are hidden.
 
 | Method | Path | Purpose |
 |---|---|---|
