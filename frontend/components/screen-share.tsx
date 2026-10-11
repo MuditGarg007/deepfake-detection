@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import {
   ApiError,
@@ -9,8 +10,8 @@ import {
   startLive,
   stopLive,
 } from "@/lib/api";
-import { seconds } from "@/lib/format";
-import type { LiveFrame, LiveSession } from "@/lib/types";
+import { STATUS_LABEL, percent, seconds } from "@/lib/format";
+import type { LiveFrame, LiveSession, RiskStatus } from "@/lib/types";
 import { LiveSummary } from "./live-summary";
 import { Timeline } from "./timeline";
 import { Button, Card, ErrorNote, Verdict, cx } from "./ui";
@@ -22,6 +23,18 @@ const MAX_FAILURES = 5;
 
 type Phase = "idle" | "starting" | "sharing" | "saving";
 
+// Document Picture-in-Picture (Chrome/Edge) is not in the TS DOM lib yet.
+type PipApi = {
+  requestWindow(options: { width: number; height: number }): Promise<Window>;
+};
+
+// The overlay window has no Tailwind, so it uses the globals.css colours inline.
+const OVERLAY_COLOR: Record<RiskStatus, string> = {
+  REAL: "#2f6b3f",
+  SUSPICIOUS: "#95650a",
+  HIGH_RISK: "#a3302a",
+};
+
 export function ScreenShare({ onSaved }: { onSaved: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -31,6 +44,7 @@ export function ScreenShare({ onSaved }: { onSaved: () => void }) {
   const busyRef = useRef(false);
   const failuresRef = useRef(0);
   const startedAtRef = useRef(0);
+  const pipRef = useRef<Window | null>(null);
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [frame, setFrame] = useState<LiveFrame | null>(null);
@@ -38,6 +52,8 @@ export function ScreenShare({ onSaved }: { onSaved: () => void }) {
   const [elapsed, setElapsed] = useState(0);
   const [summary, setSummary] = useState<LiveSession | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pip, setPip] = useState<Window | null>(null);
+  const [overlayBlocked, setOverlayBlocked] = useState(false);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -45,6 +61,7 @@ export function ScreenShare({ onSaved }: { onSaved: () => void }) {
       if (timerRef.current !== null) window.clearInterval(timerRef.current);
       streamRef.current?.getTracks().forEach((track) => track.stop());
       if (video) video.srcObject = null;
+      pipRef.current?.close();
     };
   }, []);
 
@@ -54,6 +71,30 @@ export function ScreenShare({ onSaved }: { onSaved: () => void }) {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+    pipRef.current?.close();
+    pipRef.current = null;
+    setOverlayBlocked(false);
+  }
+
+  // Opens the floating verdict window. Chrome only allows it a few seconds
+  // after a click, so if the share picker took longer we fall back to a button.
+  async function openOverlay() {
+    const api = (window as { documentPictureInPicture?: PipApi })
+      .documentPictureInPicture;
+    if (!api || pipRef.current) return;
+    try {
+      const win = await api.requestWindow({ width: 240, height: 80 });
+      win.document.body.style.margin = "0";
+      win.addEventListener("pagehide", () => {
+        pipRef.current = null;
+        setPip(null);
+      });
+      pipRef.current = win;
+      setPip(win);
+      setOverlayBlocked(false);
+    } catch {
+      setOverlayBlocked(true);
+    }
   }
 
   function grab(): Promise<Blob | null> {
@@ -126,10 +167,13 @@ export function ScreenShare({ onSaved }: { onSaved: () => void }) {
     }
 
     setPhase("starting");
+    const overlay = openOverlay();
     try {
       sessionRef.current = await startLive();
     } catch (cause) {
       stream.getTracks().forEach((track) => track.stop());
+      await overlay;
+      release();
       setPhase("idle");
       setError(errorMessage(cause));
       return;
@@ -181,6 +225,7 @@ export function ScreenShare({ onSaved }: { onSaved: () => void }) {
 
   const sharing = phase === "sharing";
   const status = frame?.status === "WAITING" ? null : (frame?.status ?? null);
+  const probability = frame?.smoothed ?? null;
 
   return (
     <div className="space-y-6">
@@ -206,6 +251,11 @@ export function ScreenShare({ onSaved }: { onSaved: () => void }) {
                 Share a screen
               </Button>
             )}
+            {sharing && overlayBlocked ? (
+              <Button onClick={() => void openOverlay()}>
+                Pop out overlay
+              </Button>
+            ) : null}
             {phase === "starting" || phase === "saving" ? (
               <span className="flex items-center gap-2 text-sm text-muted">
                 <span className="df-spinner" />
@@ -225,7 +275,7 @@ export function ScreenShare({ onSaved }: { onSaved: () => void }) {
           <div className={cx("mt-5 space-y-4", !sharing && "hidden")}>
             <Verdict
               status={status}
-              probability={frame?.smoothed ?? null}
+              probability={probability}
               placeholder={
                 frame ? "No face in view yet" : "Waiting for the first frame"
               }
@@ -249,6 +299,32 @@ export function ScreenShare({ onSaved }: { onSaved: () => void }) {
       </Card>
 
       {summary ? <LiveSummary session={summary} title="Last share" /> : null}
+
+      {pip
+        ? createPortal(
+            <div
+              style={{
+                padding: "10px 14px",
+                fontFamily: "system-ui, sans-serif",
+                color: status ? OVERLAY_COLOR[status] : "#9c8776",
+              }}
+            >
+              {status && probability !== null ? (
+                <>
+                  <div style={{ fontSize: 18, fontWeight: 600 }}>
+                    {STATUS_LABEL[status]}
+                  </div>
+                  <div style={{ fontSize: 14 }}>
+                    {percent(probability)} fake
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: 16 }}>Waiting for a face</div>
+              )}
+            </div>,
+            pip.document.body,
+          )
+        : null}
     </div>
   );
 }
