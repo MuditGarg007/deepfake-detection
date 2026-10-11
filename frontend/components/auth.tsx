@@ -98,6 +98,55 @@ export function Field({
   );
 }
 
+/** A `Field` for passwords, with an eye button that shows or hides the text. */
+export function PasswordField({
+  label,
+  ...props
+}: Omit<ComponentProps<"input">, "type"> & { label: string }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <label className="block space-y-1">
+      <span className="text-sm text-muted">{label}</span>
+      <span className="relative block">
+        <input
+          {...props}
+          type={visible ? "text" : "password"}
+          className="h-10 w-full border border-line-strong bg-background pl-3 pr-10 text-base focus:border-brown"
+        />
+        <button
+          type="button"
+          onClick={() => setVisible((shown) => !shown)}
+          aria-label={visible ? "Hide password" : "Show password"}
+          aria-pressed={visible}
+          className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted hover:text-brown"
+        >
+          <EyeIcon crossed={visible} />
+        </button>
+      </span>
+    </label>
+  );
+}
+
+function EyeIcon({ crossed }: { crossed: boolean }) {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+      {crossed ? <path d="M3 3l18 18" /> : null}
+    </svg>
+  );
+}
+
 export function OAuthButtons({
   disabled,
   onPick,

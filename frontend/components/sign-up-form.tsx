@@ -8,6 +8,7 @@ import {
   CodeForm,
   Field,
   OAuthButtons,
+  PasswordField,
   SSO_CALLBACK,
   clerkMessage,
   useFinish,
@@ -110,9 +111,8 @@ export function SignUpForm() {
           value={email}
           onChange={(event) => setEmail(event.target.value)}
         />
-        <Field
+        <PasswordField
           label="Password"
-          type="password"
           name="password"
           autoComplete="new-password"
           minLength={8}
