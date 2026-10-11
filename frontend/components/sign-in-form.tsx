@@ -8,6 +8,7 @@ import {
   CodeForm,
   Field,
   OAuthButtons,
+  PasswordField,
   SSO_CALLBACK,
   clerkMessage,
   useFinish,
@@ -152,9 +153,8 @@ export function SignInForm() {
           value={email}
           onChange={(event) => setEmail(event.target.value)}
         />
-        <Field
+        <PasswordField
           label="Password"
-          type="password"
           name="password"
           autoComplete="current-password"
           required
