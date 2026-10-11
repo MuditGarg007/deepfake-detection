@@ -24,6 +24,9 @@ LIVE_HISTORY_FRAMES = int(os.getenv("LIVE_HISTORY_FRAMES", "120"))
 LIVE_DETECT_EVERY = int(os.getenv("LIVE_DETECT_EVERY", "5"))
 LIVE_SESSION_TTL = float(os.getenv("LIVE_SESSION_TTL", "300"))
 LIVE_TIMELINE_MAX = int(os.getenv("LIVE_TIMELINE_MAX", "4000"))
+# Same key the frontend uses; the backend derives Clerk's JWKS URL from it.
+# Unset means no auth check at all.
+CLERK_PUBLISHABLE_KEY = os.getenv("CLERK_PUBLISHABLE_KEY", "")
 CORS_ORIGINS = os.getenv(
     "CORS_ORIGINS",
     "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8501,http://127.0.0.1:8501",

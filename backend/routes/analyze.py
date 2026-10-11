@@ -2,9 +2,10 @@ import logging
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 
 from .. import config, database
+from ..auth import current_user
 from ..models import add_has_video
 from ..schemas import AnalysisOut
 from ..services import video_processor
@@ -20,8 +21,8 @@ CHUNK_BYTES = 1024 * 1024
 INSERT_ANALYSIS = """
 INSERT INTO analyses (
     filename, storage_path, fake_probability, status,
-    suspicious_start, suspicious_end, frame_scores
-) VALUES (%s, %s, %s, %s, %s, %s, %s)
+    suspicious_start, suspicious_end, frame_scores, user_id
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
 RETURNING *
 """
 
@@ -57,7 +58,7 @@ def save_upload(upload):
 
 
 @router.post("/analyze", response_model=AnalysisOut, status_code=201)
-def analyze(file: UploadFile = File(...)):
+def analyze(request: Request, file: UploadFile = File(...)):
     filename = file.filename or ""
     if Path(filename).suffix.lower() not in ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -90,6 +91,7 @@ def analyze(file: UploadFile = File(...)):
             result.suspicious_start,
             result.suspicious_end,
             database.to_json(frame_scores),
+            current_user(request),
         ),
     )
     return add_has_video(row)

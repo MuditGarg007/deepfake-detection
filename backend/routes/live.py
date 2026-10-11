@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
 from .. import database
+from ..auth import current_user
 from ..schemas import LiveFrameOut, LiveSessionOut, LiveStartOut
 from ..services import live_session, video_processor
 
@@ -18,11 +19,11 @@ MAX_FRAME_BYTES = 4 * 1024 * 1024
 INSERT_SESSION = """
 INSERT INTO live_sessions (
     started_at, ended_at, duration_seconds, frames_scored,
-    mean_probability, peak_probability, status, timeline
-) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+    mean_probability, peak_probability, status, timeline, user_id
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
 RETURNING *
 """
-SELECT_SESSION = "SELECT * FROM live_sessions WHERE id = %s"
+SELECT_SESSION = "SELECT * FROM live_sessions WHERE id = %s AND user_id IS NOT DISTINCT FROM %s"
 
 
 async def read_body(request):
@@ -56,8 +57,8 @@ async def read_rgb(request):
     return rgb
 
 
-def load_session(session_id):
-    session = live_session.get(session_id)
+def load_session(session_id, request):
+    session = live_session.get(session_id, current_user(request))
     if session is None:
         raise HTTPException(
             status_code=404,
@@ -87,15 +88,15 @@ async def score_live_frame(request: Request):
 
 
 @router.post("/start", response_model=LiveStartOut, status_code=201)
-def start_session():
-    session = live_session.create()
+def start_session(request: Request):
+    session = live_session.create(current_user(request))
     logger.info("live session %s started (%d active)", session.id, live_session.active_count())
     return LiveStartOut(session_id=session.id)
 
 
 @router.post("/{session_id}/frame", response_model=LiveFrameOut)
 async def score_session_frame(session_id: str, request: Request):
-    session = load_session(session_id)
+    session = load_session(session_id, request)
     rgb = await read_rgb(request)
 
     if not session.take_slot():
@@ -113,8 +114,8 @@ async def score_session_frame(session_id: str, request: Request):
 
 
 @router.post("/{session_id}/stop", response_model=LiveSessionOut)
-def stop_session(session_id: str):
-    session = live_session.finish(session_id)
+def stop_session(session_id: str, request: Request):
+    session = live_session.finish(session_id, current_user(request))
     if session is None:
         raise HTTPException(
             status_code=404,
@@ -139,6 +140,7 @@ def stop_session(session_id: str):
             summary["peak_probability"],
             summary["status"],
             database.to_json(summary["timeline"]),
+            current_user(request),
         ),
     )
     logger.info(
@@ -152,8 +154,8 @@ def stop_session(session_id: str):
 
 
 @router.get("/sessions/{session_id}", response_model=LiveSessionOut)
-def get_session(session_id: int):
-    row = database.fetch_one(SELECT_SESSION, (session_id,))
+def get_session(session_id: int, request: Request):
+    row = database.fetch_one(SELECT_SESSION, (session_id, current_user(request)))
     if row is None:
         raise HTTPException(status_code=404, detail=f"live session {session_id} not found")
     return row

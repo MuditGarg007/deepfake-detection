@@ -1,5 +1,6 @@
 "use client";
 
+import { useClerk, useUser } from "@clerk/nextjs";
 import { useCallback, useEffect, useState } from "react";
 
 import {
@@ -31,6 +32,8 @@ type Selected =
   | { kind: "live"; session: LiveSession };
 
 export function Detector() {
+  const { user } = useUser();
+  const { signOut } = useClerk();
   const [tab, setTab] = useState<Tab>("live");
   const [health, setHealth] = useState<Health | null>(null);
   const [offline, setOffline] = useState(false);
@@ -109,7 +112,21 @@ export function Detector() {
     <div className="flex min-h-full flex-1 flex-col">
       <header className="border-b border-line bg-surface">
         <div className="mx-auto w-full max-w-3xl px-6 pt-5">
-          <h1 className="text-lg font-bold text-brown">Deepfake Detection</h1>
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="text-lg font-bold text-brown">Deepfake Detection</h1>
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-sm text-muted">
+                {user?.primaryEmailAddress?.emailAddress}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void signOut({ redirectUrl: "/sign-in" })}
+              >
+                Sign out
+              </Button>
+            </div>
+          </div>
           <nav role="tablist" className="mt-3 flex gap-1">
             {TABS.map(({ id, label }) => (
               <button

@@ -1,3 +1,5 @@
+import { getToken } from "@clerk/nextjs";
+
 import type {
   Analysis,
   Feedback,
@@ -25,6 +27,9 @@ export function errorMessage(error: unknown): string {
   if (error instanceof ApiError && error.status === 0) {
     return `Could not reach the backend at ${API_URL}. Is it running?`;
   }
+  if (error instanceof ApiError && error.status === 401) {
+    return "Your session has expired. Reload the page to sign in again.";
+  }
   return error instanceof Error ? error.message : "Something went wrong";
 }
 
@@ -36,10 +41,20 @@ function detailFrom(body: unknown, fallback: string): string {
   return fallback;
 }
 
+async function authHeaders(): Promise<Record<string, string>> {
+  const token = await getToken().catch(() => null);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${API_URL}${path}`, { cache: "no-store", ...init });
+    response = await fetch(`${API_URL}${path}`, {
+      cache: "no-store",
+      credentials: "include",
+      ...init,
+      headers: { ...(await authHeaders()), ...init?.headers },
+    });
   } catch {
     throw new ApiError("could not reach the backend", 0);
   }
@@ -55,10 +70,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function analyzeVideo(
+export async function analyzeVideo(
   file: File,
   onProgress?: (fraction: number) => void,
 ): Promise<Analysis> {
+  const headers = await authHeaders();
   return new Promise<Analysis>((resolve, reject) => {
     const body = new FormData();
     body.append("file", file);
@@ -66,6 +82,10 @@ export function analyzeVideo(
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `${API_URL}/analyze`);
     xhr.responseType = "json";
+    xhr.withCredentials = true;
+    for (const [name, value] of Object.entries(headers)) {
+      xhr.setRequestHeader(name, value);
+    }
 
     xhr.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable) onProgress?.(event.loaded / event.total);
@@ -96,6 +116,8 @@ export function getAnalysis(id: number): Promise<Analysis> {
   return request<Analysis>(`/analysis/${id}`);
 }
 
+// Loaded by a plain <img>, which cannot send a bearer token; the backend
+// accepts Clerk's __session cookie for it instead.
 export function frameUrl(id: number): string {
   return `${API_URL}/analysis/${id}/frame`;
 }

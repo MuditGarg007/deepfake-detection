@@ -1,9 +1,10 @@
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
 from .. import config, database
+from ..auth import current_user
 from ..models import add_has_video
 from ..schemas import AnalysisOut, FeedbackIn, HistoryOut
 from ..services import video_processor
@@ -17,20 +18,24 @@ MEDIA_TYPES = {
 
 router = APIRouter(tags=["analysis"])
 
-SELECT_BY_ID = "SELECT * FROM analyses WHERE id = %s"
+# `IS NOT DISTINCT FROM` so that, with auth disabled, a NULL owner matches the
+# NULL-owner rows.
+SELECT_BY_ID = "SELECT * FROM analyses WHERE id = %s AND user_id IS NOT DISTINCT FROM %s"
 SELECT_HISTORY = """
 SELECT * FROM (
     SELECT id, 'upload' AS kind, filename, storage_path,
            fake_probability, status, created_at
     FROM analyses
+    WHERE user_id IS NOT DISTINCT FROM %(user)s
     UNION ALL
     SELECT id, 'live' AS kind, 'Live screen share' AS filename,
            NULL AS storage_path,
            mean_probability AS fake_probability, status,
            ended_at AS created_at
     FROM live_sessions
+    WHERE user_id IS NOT DISTINCT FROM %(user)s
 ) combined
-ORDER BY created_at DESC, kind DESC, id DESC LIMIT %s
+ORDER BY created_at DESC, kind DESC, id DESC LIMIT %(limit)s
 """
 UPDATE_FEEDBACK = "UPDATE analyses SET user_feedback = %s WHERE id = %s RETURNING *"
 UPDATE_RESULT = """
@@ -42,8 +47,8 @@ RETURNING *
 """
 
 
-def load(analysis_id):
-    row = database.fetch_one(SELECT_BY_ID, (analysis_id,))
+def load(analysis_id, request):
+    row = database.fetch_one(SELECT_BY_ID, (analysis_id, current_user(request)))
     if row is None:
         raise HTTPException(status_code=404, detail=f"analysis {analysis_id} not found")
     return row
@@ -63,13 +68,13 @@ def source_path(row):
 
 
 @router.get("/analysis/{analysis_id}", response_model=AnalysisOut)
-def get_analysis(analysis_id: int):
-    return add_has_video(load(analysis_id))
+def get_analysis(analysis_id: int, request: Request):
+    return add_has_video(load(analysis_id, request))
 
 
 @router.get("/analysis/{analysis_id}/video", tags=["analysis"])
-def get_analysis_video(analysis_id: int):
-    row = load(analysis_id)
+def get_analysis_video(analysis_id: int, request: Request):
+    row = load(analysis_id, request)
     path = source_path(row)
     return FileResponse(
         path,
@@ -85,8 +90,8 @@ def get_analysis_video(analysis_id: int):
     response_class=Response,
     responses={200: {"content": {"image/jpeg": {}}}},
 )
-def get_analysis_frame(analysis_id: int):
-    row = load(analysis_id)
+def get_analysis_frame(analysis_id: int, request: Request):
+    row = load(analysis_id, request)
     if not row["frame_scores"]:
         raise HTTPException(status_code=404, detail="this analysis has no scored frames")
 
@@ -102,20 +107,20 @@ def get_analysis_frame(analysis_id: int):
     return Response(
         content=image,
         media_type="image/jpeg",
-        headers={"Cache-Control": "public, max-age=3600"},
+        headers={"Cache-Control": "private, max-age=3600"},
     )
 
 
 @router.post("/analysis/{analysis_id}/feedback", response_model=AnalysisOut)
-def set_feedback(analysis_id: int, body: FeedbackIn):
-    load(analysis_id)
+def set_feedback(analysis_id: int, body: FeedbackIn, request: Request):
+    load(analysis_id, request)
     row = database.fetch_one(UPDATE_FEEDBACK, (body.label, analysis_id))
     return add_has_video(row)
 
 
 @router.post("/analysis/{analysis_id}/rerun", response_model=AnalysisOut)
-def rerun_analysis(analysis_id: int):
-    row = load(analysis_id)
+def rerun_analysis(analysis_id: int, request: Request):
+    row = load(analysis_id, request)
     path = source_path(row)
 
     try:
@@ -142,6 +147,8 @@ def rerun_analysis(analysis_id: int):
 
 
 @router.get("/history", response_model=list[HistoryOut])
-def history(limit: int = 100):
-    rows = database.fetch_all(SELECT_HISTORY, (limit,))
+def history(request: Request, limit: int = 100):
+    rows = database.fetch_all(
+        SELECT_HISTORY, {"user": current_user(request), "limit": limit}
+    )
     return [add_has_video(row) for row in rows]

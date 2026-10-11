@@ -17,8 +17,9 @@ def utcnow():
 
 class LiveSession:
 
-    def __init__(self, session_id):
+    def __init__(self, session_id, owner=None):
         self.id = session_id
+        self.owner = owner
         self.started_at = utcnow()
         self.touched_at = time.monotonic()
 
@@ -164,22 +165,28 @@ def reap(now=None):
     return stale
 
 
-def create():
+def create(owner=None):
     reap()
-    session = LiveSession(uuid.uuid4().hex)
+    session = LiveSession(uuid.uuid4().hex, owner)
     with _lock:
         _sessions[session.id] = session
     return session
 
 
-def get(session_id):
+def get(session_id, owner=None):
     with _lock:
-        return _sessions.get(session_id)
+        session = _sessions.get(session_id)
+    if session is None or session.owner != owner:
+        return None
+    return session
 
 
-def finish(session_id):
+def finish(session_id, owner=None):
     with _lock:
-        return _sessions.pop(session_id, None)
+        session = _sessions.get(session_id)
+        if session is None or session.owner != owner:
+            return None
+        return _sessions.pop(session_id)
 
 
 def active_count():
