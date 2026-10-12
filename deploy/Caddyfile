@@ -4,16 +4,9 @@
 deepguard.muditgarg.xyz {
 	encode zstd gzip
 
-	# Same origin for UI and API, so the browser never makes a CORS request.
-	# handle_path strips the /api prefix before proxying.
-	handle_path /api/* {
-		request_body {
-			max_size 110MB
-		}
-		reverse_proxy 127.0.0.1:8100
+	# The backend serves both the pages and the /api routes.
+	request_body {
+		max_size 110MB
 	}
-
-	handle {
-		reverse_proxy 127.0.0.1:3100
-	}
+	reverse_proxy 127.0.0.1:8100
 }

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeepGuard</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="header">
+    <h1>DeepGuard</h1>
+    <div id="user-info" hidden>
+      Signed in as <span id="user-email"></span>
+      <button id="sign-out">Sign out</button>
+    </div>
+  </div>
+
+  <p id="page-message">Loading...</p>
+
+  <div id="auth" hidden>
+    <div id="sign-in-box">
+      <h2>Sign in</h2>
+      <div class="buttons">
+        <button class="oauth-button" data-strategy="oauth_google">Continue with Google</button>
+        <button class="oauth-button" data-strategy="oauth_github">Continue with GitHub</button>
+      </div>
+      <form id="sign-in-form">
+        <div class="field">
+          <label for="sign-in-email">Email</label>
+          <input type="email" id="sign-in-email" autocomplete="email" required>
+        </div>
+        <div class="field">
+          <label for="sign-in-password">Password</label>
+          <input type="password" id="sign-in-password" autocomplete="current-password" required>
+        </div>
+        <div class="row">
+          <label><input type="checkbox" class="show-password" data-for="sign-in-password"> Show password</label>
+        </div>
+        <div class="buttons">
+          <button type="submit">Sign in</button>
+        </div>
+      </form>
+      <div class="row">
+        No account yet? <button id="show-sign-up">Create one</button>
+      </div>
+    </div>
+
+    <div id="admin-box">
+      <h2>Admin login</h2>
+      <form id="admin-form">
+        <div class="field">
+          <label for="admin-username">Username</label>
+          <input type="text" id="admin-username" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label for="admin-password">Password</label>
+          <input type="password" id="admin-password" autocomplete="current-password" required>
+        </div>
+        <div class="row">
+          <label><input type="checkbox" class="show-password" data-for="admin-password"> Show password</label>
+        </div>
+        <div class="buttons">
+          <button type="submit">Sign in as admin</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="sign-up-box" hidden>
+      <h2>Create an account</h2>
+      <div class="buttons">
+        <button class="oauth-button" data-strategy="oauth_google">Continue with Google</button>
+        <button class="oauth-button" data-strategy="oauth_github">Continue with GitHub</button>
+      </div>
+      <form id="sign-up-form">
+        <div class="field">
+          <label for="sign-up-email">Email</label>
+          <input type="email" id="sign-up-email" autocomplete="email" required>
+        </div>
+        <div class="field">
+          <label for="sign-up-password">Password</label>
+          <input type="password" id="sign-up-password" autocomplete="new-password" minlength="8" required>
+        </div>
+        <div class="row">
+          <label><input type="checkbox" class="show-password" data-for="sign-up-password"> Show password</label>
+        </div>
+        <div id="clerk-captcha"></div>
+        <div class="buttons">
+          <button type="submit">Create account</button>
+        </div>
+      </form>
+      <div class="row">
+        Already have an account? <button id="show-sign-in">Sign in</button>
+      </div>
+    </div>
+
+    <div id="code-box" hidden>
+      <h2>Check your email</h2>
+      <p>Enter the code we sent to your email.</p>
+      <form id="code-form">
+        <div class="field">
+          <label for="code-input">Code</label>
+          <input type="text" id="code-input" inputmode="numeric" autocomplete="one-time-code" required>
+        </div>
+        <div class="buttons">
+          <button type="submit">Verify</button>
+        </div>
+      </form>
+      <div class="buttons">
+        <button id="resend-code">Send a new code</button>
+        <button id="code-back">Back</button>
+      </div>
+    </div>
+
+    <p id="auth-message"></p>
+  </div>
+
+  <div id="admin-view" hidden>
+    <h2>Database tables</h2>
+    <div class="field">
+      <label for="table-select">Table</label>
+      <select id="table-select"></select>
+      <button id="table-refresh">Refresh</button>
+    </div>
+    <p id="table-message"></p>
+    <div class="table-wrap">
+      <table id="table-data"></table>
+    </div>
+  </div>
+
+  <div id="app" hidden>
+    <section>
+      <h2>Screenshot an app</h2>
+      <p>Pick a window or screen. One frame is captured and checked.</p>
+      <div class="buttons">
+        <button id="screenshot-button">Take screenshot</button>
+      </div>
+      <p id="screenshot-message"></p>
+      <div class="row">Verdict: <span id="screenshot-status">-</span></div>
+      <div class="row">Fake probability: <span id="screenshot-probability">-</span></div>
+      <div class="media">
+        <img id="screenshot-image" alt="Screenshot" width="480" hidden>
+      </div>
+    </section>
+
+    <section>
+      <h2>Live screen share</h2>
+      <div class="buttons">
+        <button id="live-start">Start sharing</button>
+        <button id="live-stop" disabled>Stop sharing</button>
+      </div>
+      <p id="live-message"></p>
+      <div class="row">Verdict: <span id="live-status">-</span></div>
+      <div class="row">Fake probability: <span id="live-probability">-</span></div>
+      <div class="row">Frames with a face: <span id="live-frames">0</span></div>
+      <div class="media">
+        <video id="live-video" muted playsinline width="480" hidden></video>
+      </div>
+    </section>
+
+    <section id="live-result" hidden>
+      <h2>Live session result</h2>
+      <div class="row">Verdict: <span id="live-result-status"></span></div>
+      <div class="row">Average fake probability: <span id="live-result-mean"></span></div>
+      <div class="row">Highest fake probability: <span id="live-result-peak"></span></div>
+      <div class="row">Duration: <span id="live-result-duration"></span></div>
+      <div class="row">Frames with a face: <span id="live-result-frames"></span></div>
+      <div class="row">Started on: <span id="live-result-date"></span></div>
+    </section>
+
+    <section>
+      <h2>Upload a video</h2>
+      <div class="field">
+        <label for="file-input">Video file (.mp4, .avi, .mov)</label>
+        <input type="file" id="file-input" accept=".mp4,.avi,.mov">
+      </div>
+      <div class="buttons">
+        <button id="upload-button">Analyze</button>
+      </div>
+      <p id="upload-message"></p>
+    </section>
+
+    <section id="result" hidden>
+      <h2>Video result</h2>
+      <div class="row">File: <span id="result-file"></span></div>
+      <div class="row">Verdict: <span id="result-status"></span></div>
+      <div class="row">Fake probability: <span id="result-probability"></span></div>
+      <div class="row">Most suspicious part: <span id="result-range"></span></div>
+      <div class="row">Checked on: <span id="result-date"></span></div>
+      <div class="media">
+        <video id="result-video" controls width="480" hidden></video>
+      </div>
+      <div class="media">
+        <p id="result-frame-label" hidden>Most suspicious frame:</p>
+        <img id="result-frame" alt="Most suspicious frame" width="480" hidden>
+      </div>
+      <div class="row">Your feedback: <span id="result-feedback"></span></div>
+      <div class="buttons">
+        <button id="feedback-real">It is real</button>
+        <button id="feedback-fake">It is fake</button>
+        <button id="feedback-clear">Clear feedback</button>
+        <button id="rerun-button">Analyze again</button>
+      </div>
+      <p id="result-message"></p>
+    </section>
+
+    <section>
+      <h2>History</h2>
+      <div class="buttons">
+        <button id="history-refresh">Refresh</button>
+      </div>
+      <p id="history-message"></p>
+      <ul id="history-list"></ul>
+    </section>
+  </div>
+</body>
+</html>

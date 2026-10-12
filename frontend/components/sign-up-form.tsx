@@ -120,6 +120,32 @@ export function SignUpForm() {
           value={password}
           onChange={(event) => setPassword(event.target.value)}
         />
+      </form>
+
+      <h2>Admin Login</h2>
+      <OAuthButtons disabled={busy} onPick={oauth} />
+      <form onSubmit={submit} className="space-y-4">
+        <Field
+          label="Email"
+          type="email"
+          name="email"
+          autoComplete="email"
+          required
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+        />
+        <PasswordField
+          label="Password"
+          name="password"
+          autoComplete="new-password"
+          minLength={8}
+          required
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
+
+        
+        
         {error ? <ErrorNote>{error}</ErrorNote> : null}
         {/* Clerk mounts its bot-protection challenge here when it is enabled. */}
         <div id="clerk-captcha" />
