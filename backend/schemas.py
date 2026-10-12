@@ -61,3 +61,17 @@ class HistoryOut(BaseModel):
     status: str
     created_at: datetime
     has_video: bool
+
+
+class AdminLoginIn(BaseModel):
+    username: str
+    password: str
+
+
+class AdminOut(BaseModel):
+    username: str
+
+
+class RegisterIn(BaseModel):
+    email: str
+    password: str

@@ -2,12 +2,12 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from . import config
-from .auth import RequireUser
+from .auth import RequireUser, frontend_api
 from .database import init_schema
-from .routes import analyze, history, live
+from .routes import admin, analyze, history, live, users
 from .services import detector
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -23,21 +23,24 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Deepfake Detection & Alert System", lifespan=lifespan)
 
-# Added before CORS so CORS wraps it and 401s still carry CORS headers.
 app.add_middleware(RequireUser)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=config.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
-app.include_router(analyze.router)
-app.include_router(history.router)
-app.include_router(live.router)
+app.include_router(admin.router, prefix="/api")
+app.include_router(users.router, prefix="/api")
+app.include_router(analyze.router, prefix="/api")
+app.include_router(history.router, prefix="/api")
+app.include_router(live.router, prefix="/api")
 
 
 @app.get("/health", tags=["meta"])
 def health():
     return {"status": "ok", "model_loaded": detector.MODEL is not None}
+
+
+@app.get("/api/config", tags=["meta"])
+def client_config():
+    key = config.CLERK_PUBLISHABLE_KEY
+    return {"publishable_key": key, "frontend_api": frontend_api(key) if key else ""}
+
+
+app.mount("/", StaticFiles(directory=config.BACKEND_DIR / "static", html=True), name="static")

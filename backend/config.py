@@ -24,10 +24,16 @@ LIVE_HISTORY_FRAMES = int(os.getenv("LIVE_HISTORY_FRAMES", "120"))
 LIVE_DETECT_EVERY = int(os.getenv("LIVE_DETECT_EVERY", "5"))
 LIVE_SESSION_TTL = float(os.getenv("LIVE_SESSION_TTL", "300"))
 LIVE_TIMELINE_MAX = int(os.getenv("LIVE_TIMELINE_MAX", "4000"))
-# Same key the frontend uses; the backend derives Clerk's JWKS URL from it.
-# Unset means no auth check at all.
+# The backend derives Clerk's JWKS URL from it and hands it to the static pages
+# via /api/config. Unset means no auth check at all.
 CLERK_PUBLISHABLE_KEY = os.getenv("CLERK_PUBLISHABLE_KEY", "")
+# Origins the app is served from. Clerk session tokens minted for any other
+# origin are rejected (see auth.verify).
 CORS_ORIGINS = os.getenv(
     "CORS_ORIGINS",
-    "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8501,http://127.0.0.1:8501",
+    "http://localhost:8000,http://127.0.0.1:8000",
 ).split(",")
+
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+ADMIN_SESSION_SECONDS = int(os.getenv("ADMIN_SESSION_SECONDS", str(12 * 60 * 60)))

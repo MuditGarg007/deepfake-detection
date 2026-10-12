@@ -1,30 +1,28 @@
 #!/usr/bin/env bash
 #
-# Run the whole app — FastAPI backend + Next.js frontend — with one command.
+# Run the app with one command. The FastAPI backend also serves the pages in
+# backend/static, so there is a single server.
 #
-#   ./run.sh                          # backend on 8000, frontend on 3000
-#   ./run.sh --backend-port 8010 --frontend-port 3010
-#   ./run.sh --skip-install           # never touch .venv or node_modules
+#   ./run.sh                          # app on 8000
+#   ./run.sh --port 8010
+#   ./run.sh --skip-install           # never touch .venv
 #
-# Busy ports are stepped past automatically, the frontend is pointed at whatever
-# port the backend actually got, and Ctrl-C stops both.
+# A busy port is stepped past automatically. Ctrl-C stops the server.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-BACKEND_PORT=8000
-FRONTEND_PORT=3000
+PORT=8000
 SKIP_INSTALL=0
 LOG_DIR="$ROOT/logs"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --backend-port) BACKEND_PORT="$2"; shift 2 ;;
-    --frontend-port) FRONTEND_PORT="$2"; shift 2 ;;
+    --port) PORT="$2"; shift 2 ;;
     --skip-install) SKIP_INSTALL=1; shift ;;
-    -h|--help) sed -n '3,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '3,10p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
   esac
 done
@@ -43,12 +41,9 @@ free_port() {
   die "no free port in ${1}-$((${1} + 20))"
 }
 
-WANTED_BACKEND=$BACKEND_PORT
-WANTED_FRONTEND=$FRONTEND_PORT
-BACKEND_PORT="$(free_port "$BACKEND_PORT")"
-FRONTEND_PORT="$(free_port "$FRONTEND_PORT")"
-[[ "$BACKEND_PORT" == "$WANTED_BACKEND" ]] || say "port $WANTED_BACKEND is taken — backend moves to $BACKEND_PORT"
-[[ "$FRONTEND_PORT" == "$WANTED_FRONTEND" ]] || say "port $WANTED_FRONTEND is taken — frontend moves to $FRONTEND_PORT"
+WANTED_PORT=$PORT
+PORT="$(free_port "$PORT")"
+[[ "$PORT" == "$WANTED_PORT" ]] || say "port $WANTED_PORT is taken — the app moves to $PORT"
 
 if [[ ! -d .venv ]]; then
   [[ $SKIP_INSTALL == 1 ]] && die ".venv is missing and --skip-install was passed"
@@ -64,13 +59,6 @@ if ! "$PYTHON" -c "import uvicorn, fastapi, cv2, torch" >/dev/null 2>&1; then
   "$PYTHON" -m pip install --quiet -r backend/requirements.txt
 fi
 
-command -v npm >/dev/null || die "npm is not installed"
-if [[ ! -d frontend/node_modules ]]; then
-  [[ $SKIP_INSTALL == 1 ]] && die "frontend/node_modules is missing and --skip-install was passed"
-  say "installing frontend dependencies"
-  (cd frontend && npm install --silent)
-fi
-
 if [[ ! -f backend/.env ]]; then
   say "backend/.env not found — copying backend/.env.example (set NEON_DB_URL in it)"
   cp backend/.env.example backend/.env
@@ -78,30 +66,28 @@ fi
 
 mkdir -p "$LOG_DIR"
 
-export NEXT_PUBLIC_API_URL="http://localhost:$BACKEND_PORT"
-export CORS_ORIGINS="http://localhost:$FRONTEND_PORT,http://127.0.0.1:$FRONTEND_PORT"
+# Clerk tokens are only accepted from the origin the app is served on.
+export CORS_ORIGINS="http://localhost:$PORT,http://127.0.0.1:$PORT"
 
 BACKEND_PID=""
-FRONTEND_PID=""
 
 cleanup() {
   trap - INT TERM EXIT
   say "stopping"
-  [[ -n "$FRONTEND_PID" ]] && kill "$FRONTEND_PID" 2>/dev/null || true
   [[ -n "$BACKEND_PID" ]] && kill "$BACKEND_PID" 2>/dev/null || true
   wait 2>/dev/null || true
 }
 trap cleanup INT TERM EXIT
 
-say "starting backend on :$BACKEND_PORT"
-"$PYTHON" -m uvicorn backend.main:app --port "$BACKEND_PORT" \
+say "starting the app on :$PORT"
+"$PYTHON" -m uvicorn backend.main:app --port "$PORT" \
   > >(tee -a "$LOG_DIR/backend.log" | sed -u 's/^/\x1b[2m[api]\x1b[0m /') 2>&1 &
 BACKEND_PID=$!
 
 say "waiting for the model to load"
 for i in $(seq 120); do
   kill -0 "$BACKEND_PID" 2>/dev/null || die "backend exited — see $LOG_DIR/backend.log"
-  HEALTH="$(curl -sf "http://127.0.0.1:$BACKEND_PORT/health" || true)"
+  HEALTH="$(curl -sf "http://127.0.0.1:$PORT/health" || true)"
   [[ -n "$HEALTH" ]] && break
   sleep 1
 done
@@ -112,25 +98,14 @@ case "$HEALTH" in
   *) say "no checkpoint found — the backend is in stub mode and scores every frame 0.5" ;;
 esac
 
-say "starting frontend on :$FRONTEND_PORT"
-(cd frontend && exec npx next dev --port "$FRONTEND_PORT") \
-  > >(tee -a "$LOG_DIR/frontend.log" | sed -u 's/^/\x1b[2m[web]\x1b[0m /') 2>&1 &
-FRONTEND_PID=$!
-
-for i in $(seq 60); do
-  kill -0 "$FRONTEND_PID" 2>/dev/null || die "frontend exited — see $LOG_DIR/frontend.log"
-  curl -sf -o /dev/null "http://127.0.0.1:$FRONTEND_PORT" && break
-  sleep 1
-done
-
 cat <<BANNER
 
-  App        http://localhost:$FRONTEND_PORT
-  API docs   http://localhost:$BACKEND_PORT/docs
-  Logs       $LOG_DIR/{backend,frontend}.log
+  App        http://localhost:$PORT
+  API docs   http://localhost:$PORT/docs
+  Logs       $LOG_DIR/backend.log
 
-  Ctrl-C stops both.
+  Ctrl-C stops the server.
 
 BANNER
 
-wait -n "$BACKEND_PID" "$FRONTEND_PID"
+wait "$BACKEND_PID"
