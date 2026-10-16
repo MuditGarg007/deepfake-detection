@@ -3,16 +3,53 @@ body {
   max-width: 800px;
   margin: 0 auto;
   padding: 20px;
+  background-color: white;
+  color: #222;
+  line-height: 1.5;
+}
+
+h1 {
+  color: #e8590c;
+}
+
+h2 {
+  color: #e8590c;
+  font-size: 20px;
 }
 
 .header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  border-bottom: 2px solid #e8590c;
+}
+
+.intro {
+  color: #555;
+}
+
+.box {
+  max-width: 340px;
+  margin: 30px auto;
+  padding: 20px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+.box h2 {
+  margin-top: 0;
+}
+
+.box input[type="email"],
+.box input[type="password"],
+.box input[type="text"] {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 section {
-  border-bottom: 1px solid #ccc;
+  border-bottom: 1px solid #f3c9a8;
   padding-bottom: 10px;
 }
 
@@ -29,6 +66,15 @@ section {
   margin-bottom: 4px;
 }
 
+input[type="email"],
+input[type="password"],
+input[type="text"] {
+  padding: 6px;
+  border: 1px solid #ccc;
+  width: 250px;
+  max-width: 100%;
+}
+
 .buttons {
   margin: 10px 0;
 }
@@ -38,12 +84,17 @@ section {
 }
 
 button {
-  background-color: black;
+  background-color: #e8590c;
   color: white;
   border: none;
   padding: 6px 12px;
   margin-right: 4px;
+  margin-bottom: 4px;
   cursor: pointer;
+}
+
+button:hover {
+  background-color: #c74a08;
 }
 
 button:disabled {
@@ -53,6 +104,46 @@ button:disabled {
 video,
 img {
   max-width: 100%;
+}
+
+.verdict {
+  font-weight: bold;
+}
+
+/* The captured frame is shown at page width; the box is positioned in the
+   same CSS pixels and mapped back to frame pixels when cropping. */
+.crop-stage {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+#crop-canvas {
+  display: block;
+  max-width: 100%;
+}
+
+.crop-box {
+  position: absolute;
+  border: 2px dashed #e8590c;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.verdict[data-status="REAL"] {
+  color: green;
+}
+
+.verdict[data-status="SUSPICIOUS"] {
+  color: #b8860b;
+}
+
+.verdict[data-status="HIGH_RISK"] {
+  color: #c00;
 }
 
 #history-list {
@@ -84,5 +175,11 @@ img {
 }
 
 #table-data th {
-  background-color: #eee;
+  background-color: #fde8d7;
+}
+
+.footer {
+  color: #777;
+  font-size: 13px;
+  text-align: center;
 }

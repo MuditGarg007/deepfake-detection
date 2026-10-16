@@ -20,12 +20,12 @@ router = APIRouter(tags=["analysis"])
 
 # `IS NOT DISTINCT FROM` so that, with auth disabled, a NULL owner matches the
 # NULL-owner rows.
-SELECT_BY_ID = "SELECT * FROM analyses WHERE id = %s AND user_id IS NOT DISTINCT FROM %s"
+SELECT_BY_ID = "SELECT * FROM uploads WHERE id = %s AND user_id IS NOT DISTINCT FROM %s"
 SELECT_HISTORY = """
 SELECT * FROM (
     SELECT id, 'upload' AS kind, filename, storage_path,
            fake_probability, status, created_at
-    FROM analyses
+    FROM uploads
     WHERE user_id IS NOT DISTINCT FROM %(user)s
     UNION ALL
     SELECT id, 'live' AS kind, 'Live screen share' AS filename,
@@ -37,9 +37,9 @@ SELECT * FROM (
 ) combined
 ORDER BY created_at DESC, kind DESC, id DESC LIMIT %(limit)s
 """
-UPDATE_FEEDBACK = "UPDATE analyses SET user_feedback = %s WHERE id = %s RETURNING *"
+UPDATE_FEEDBACK = "UPDATE uploads SET user_feedback = %s WHERE id = %s RETURNING *"
 UPDATE_RESULT = """
-UPDATE analyses SET
+UPDATE uploads SET
     fake_probability = %s, status = %s,
     suspicious_start = %s, suspicious_end = %s, frame_scores = %s
 WHERE id = %s

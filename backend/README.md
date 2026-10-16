@@ -88,6 +88,7 @@ before sign-in was added have no owner and are hidden.
 | `POST` | `/live/{session}/stop` | Finalise a session and store its summary row |
 | `GET` | `/live/sessions/{id}` | One stored live session |
 | `POST` | `/live/frame` | Score one JPEG, stateless — no session, no smoothing |
+| `POST` | `/live/screenshot` | Score one screenshot JPEG and store a `screenshots` row when a face is found |
 
 ### `GET /health`
 
@@ -231,7 +232,7 @@ upload verdict and a live verdict mean the same thing; only the live badge's
 *exit* from a state is sticky, by `RISK_HYSTERESIS`, so a score sitting on a
 threshold cannot make it strobe.
 
-The stored tables (`analyses` and `live_sessions`) are the schema in
+The stored tables (`uploads`, `live_sessions` and `screenshots`) are the schema in
 [`docs/backend-roadmap.md`](../docs/backend-roadmap.md) T4, created by the DDL
 in `backend/database.py`, with `frame_scores` stored as `JSONB`.
 

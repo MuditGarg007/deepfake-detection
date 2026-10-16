@@ -17,6 +17,11 @@ let liveBusy = false;
 let liveFailures = 0;
 const liveCanvas = document.createElement("canvas");
 
+// Screenshot area selection, in pixels of the captured frame.
+const MIN_CROP = 24;
+let cropStart = null;
+let cropSelection = null;
+
 function byId(id) {
   return document.getElementById(id);
 }
@@ -38,6 +43,17 @@ function seconds(value) {
 
 function statusName(status) {
   return STATUS_NAMES[status] || status || "-";
+}
+
+// Sets the verdict text and tags the element so the stylesheet can color it.
+function setStatus(id, status) {
+  const element = byId(id);
+  element.textContent = statusName(status);
+  if (status) {
+    element.dataset.status = status;
+  } else {
+    delete element.dataset.status;
+  }
 }
 
 function formatDate(text) {
@@ -91,17 +107,6 @@ async function startPage() {
       await loadClerk(config);
       clerk = window.Clerk;
       await clerk.load();
-
-      if (window.location.search.includes("sso-callback")) {
-        setText("page-message", "Finishing sign-in...");
-        await clerk.handleRedirectCallback({
-          signInForceRedirectUrl: "/",
-          signUpForceRedirectUrl: "/",
-          secondFactorUrl: "/?second-factor",
-          continueSignUpUrl: "/",
-        });
-        return;
-      }
 
       if (!clerk.user) {
         showSignedOut();
@@ -227,7 +232,7 @@ function showBox(id) {
   byId("sign-in-box").hidden = id !== "sign-in-box";
   byId("sign-up-box").hidden = id !== "sign-up-box";
   byId("code-box").hidden = id !== "code-box";
-  byId("admin-box").hidden = id !== "sign-in-box";
+  byId("admin-box").hidden = true;
   setText("auth-message", "");
 }
 
@@ -349,19 +354,6 @@ async function resendCode() {
   }
 }
 
-async function signInWithProvider(strategy) {
-  setText("auth-message", "Redirecting...");
-  try {
-    await clerk.client.signIn.authenticateWithRedirect({
-      strategy: strategy,
-      redirectUrl: "/?sso-callback",
-      redirectUrlComplete: "/",
-    });
-  } catch (error) {
-    setText("auth-message", clerkError(error));
-  }
-}
-
 async function adminSignIn(event) {
   event.preventDefault();
   setText("auth-message", "Signing in...");
@@ -423,7 +415,7 @@ function showAnalysis(analysis) {
   byId("result").hidden = false;
 
   setText("result-file", analysis.filename);
-  setText("result-status", statusName(analysis.status));
+  setStatus("result-status", analysis.status);
   setText("result-probability", percent(analysis.fake_probability));
   setText("result-date", formatDate(analysis.created_at));
   setText("result-feedback", analysis.user_feedback || "None");
@@ -562,7 +554,7 @@ async function startLive() {
 
   liveFailures = 0;
   setText("live-message", "Sharing. Waiting for a face...");
-  setText("live-status", "-");
+  setStatus("live-status", null);
   setText("live-probability", "-");
   setText("live-frames", "0");
   byId("live-stop").disabled = false;
@@ -608,7 +600,7 @@ async function sendLiveFrame() {
 function showLiveVerdict(verdict) {
   const message = verdict.face_found ? "Sharing." : "Sharing. No face in the latest frame.";
   setText("live-message", message);
-  setText("live-status", statusName(verdict.status));
+  setStatus("live-status", verdict.status);
   setText("live-probability", percent(verdict.smoothed));
   setText("live-frames", verdict.frames_scored || 0);
 }
@@ -660,23 +652,115 @@ async function takeScreenshot() {
     return;
   }
 
-  const button = byId("screenshot-button");
-  button.disabled = true;
-  setText("screenshot-message", "Checking...");
-  setText("screenshot-status", "-");
-  setText("screenshot-probability", "-");
-
+  // Grab one frame at full resolution so a small selection still has detail.
+  const canvas = byId("crop-canvas");
   try {
     const video = document.createElement("video");
     video.muted = true;
     video.srcObject = stream;
     await video.play();
-
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.min(1920, video.videoWidth);
-    canvas.height = Math.round(video.videoHeight * canvas.width / video.videoWidth);
-    canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+  } catch (error) {
+    setText("screenshot-message", "Could not capture the screen.");
+    return;
+  } finally {
     stream.getTracks().forEach((track) => track.stop());
+  }
+
+  cropSelection = null;
+  byId("crop-box").hidden = true;
+  byId("crop-check").disabled = true;
+  byId("crop").hidden = false;
+  byId("screenshot-button").disabled = true;
+  setText("screenshot-message", "");
+}
+
+// Converts a pointer position to pixels of the captured frame, clamped to it.
+function cropPoint(event) {
+  const canvas = byId("crop-canvas");
+  const bounds = canvas.getBoundingClientRect();
+  const scale = canvas.width / bounds.width;
+  const x = Math.min(Math.max(event.clientX - bounds.left, 0), bounds.width);
+  const y = Math.min(Math.max(event.clientY - bounds.top, 0), bounds.height);
+  return { x: x * scale, y: y * scale };
+}
+
+function drawCropBox() {
+  const canvas = byId("crop-canvas");
+  const box = byId("crop-box");
+  const scale = canvas.getBoundingClientRect().width / canvas.width;
+  box.style.left = cropSelection.x * scale + "px";
+  box.style.top = cropSelection.y * scale + "px";
+  box.style.width = cropSelection.width * scale + "px";
+  box.style.height = cropSelection.height * scale + "px";
+  box.hidden = false;
+}
+
+function startCrop(event) {
+  cropStart = cropPoint(event);
+  cropSelection = null;
+  byId("crop-box").hidden = true;
+  byId("crop-stage").setPointerCapture(event.pointerId);
+}
+
+function moveCrop(event) {
+  if (!cropStart) {
+    return;
+  }
+  const point = cropPoint(event);
+  cropSelection = {
+    x: Math.min(cropStart.x, point.x),
+    y: Math.min(cropStart.y, point.y),
+    width: Math.abs(point.x - cropStart.x),
+    height: Math.abs(point.y - cropStart.y),
+  };
+  drawCropBox();
+}
+
+function endCrop() {
+  if (!cropStart) {
+    return;
+  }
+  cropStart = null;
+  // A click or tiny drag clears the selection instead of making a sliver.
+  if (!cropSelection || cropSelection.width < MIN_CROP || cropSelection.height < MIN_CROP) {
+    cropSelection = null;
+    byId("crop-box").hidden = true;
+  }
+  byId("crop-check").disabled = !cropSelection;
+}
+
+function closeCrop() {
+  byId("crop").hidden = true;
+  byId("screenshot-button").disabled = false;
+}
+
+function cancelCrop() {
+  closeCrop();
+  setText("screenshot-message", "Screenshot was cancelled.");
+}
+
+// Scores the selected area, or the whole frame when region is null.
+async function checkScreenshot(region) {
+  const source = byId("crop-canvas");
+  const area = region || { x: 0, y: 0, width: source.width, height: source.height };
+  closeCrop();
+
+  const button = byId("screenshot-button");
+  button.disabled = true;
+  setText("screenshot-message", "Checking...");
+  setStatus("screenshot-status", null);
+  setText("screenshot-probability", "-");
+
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(Math.min(1920, area.width));
+    canvas.height = Math.round(area.height * canvas.width / area.width);
+    canvas.getContext("2d").drawImage(
+      source, area.x, area.y, area.width, area.height, 0, 0, canvas.width, canvas.height,
+    );
 
     const image = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.95));
     const preview = byId("screenshot-image");
@@ -686,7 +770,7 @@ async function takeScreenshot() {
     preview.src = URL.createObjectURL(image);
     preview.hidden = false;
 
-    const verdict = await api("/live/frame", {
+    const verdict = await api("/live/screenshot", {
       method: "POST",
       headers: { "Content-Type": "image/jpeg" },
       body: image,
@@ -694,7 +778,7 @@ async function takeScreenshot() {
 
     if (verdict.face_found) {
       setText("screenshot-message", "Done. This is a single-frame check, so treat it as a hint.");
-      setText("screenshot-status", statusName(verdict.status));
+      setStatus("screenshot-status", verdict.status);
       setText("screenshot-probability", percent(verdict.fake_probability));
     } else {
       setText("screenshot-message", "No face found in the screenshot.");
@@ -702,7 +786,6 @@ async function takeScreenshot() {
   } catch (error) {
     setText("screenshot-message", error.message);
   } finally {
-    stream.getTracks().forEach((track) => track.stop());
     button.disabled = false;
   }
 }
@@ -711,7 +794,7 @@ function showLiveSummary(session) {
   byId("result").hidden = true;
   byId("live-result").hidden = false;
 
-  setText("live-result-status", statusName(session.status));
+  setStatus("live-result-status", session.status);
   setText("live-result-mean", percent(session.mean_probability));
   setText("live-result-peak", percent(session.peak_probability));
   setText("live-result-duration", seconds(session.duration_seconds));
@@ -726,14 +809,13 @@ byId("resend-code").addEventListener("click", resendCode);
 byId("code-back").addEventListener("click", () => showBox("sign-in-box"));
 byId("show-sign-up").addEventListener("click", () => showBox("sign-up-box"));
 byId("show-sign-in").addEventListener("click", () => showBox("sign-in-box"));
+byId("show-admin").addEventListener("click", () => {
+  byId("admin-box").hidden = !byId("admin-box").hidden;
+});
 byId("admin-form").addEventListener("submit", adminSignIn);
 byId("sign-out").addEventListener("click", signOut);
 byId("table-select").addEventListener("change", loadTable);
 byId("table-refresh").addEventListener("click", loadTable);
-
-for (const button of document.querySelectorAll(".oauth-button")) {
-  button.addEventListener("click", () => signInWithProvider(button.dataset.strategy));
-}
 
 for (const checkbox of document.querySelectorAll(".show-password")) {
   checkbox.addEventListener("change", togglePassword);
@@ -748,6 +830,13 @@ byId("result-frame").addEventListener("error", hideFrame);
 byId("live-start").addEventListener("click", startLive);
 byId("live-stop").addEventListener("click", stopLive);
 byId("screenshot-button").addEventListener("click", takeScreenshot);
+byId("crop-stage").addEventListener("pointerdown", startCrop);
+byId("crop-stage").addEventListener("pointermove", moveCrop);
+byId("crop-stage").addEventListener("pointerup", endCrop);
+byId("crop-stage").addEventListener("pointercancel", endCrop);
+byId("crop-check").addEventListener("click", () => checkScreenshot(cropSelection));
+byId("crop-whole").addEventListener("click", () => checkScreenshot(null));
+byId("crop-cancel").addEventListener("click", cancelCrop);
 byId("history-refresh").addEventListener("click", loadHistory);
 
 startPage();

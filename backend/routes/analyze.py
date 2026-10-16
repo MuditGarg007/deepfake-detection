@@ -19,7 +19,7 @@ ALLOWED_EXTENSIONS = [".mp4", ".avi", ".mov"]
 CHUNK_BYTES = 1024 * 1024
 
 INSERT_ANALYSIS = """
-INSERT INTO analyses (
+INSERT INTO uploads (
     filename, storage_path, fake_probability, status,
     suspicious_start, suspicious_end, frame_scores, user_id
 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
