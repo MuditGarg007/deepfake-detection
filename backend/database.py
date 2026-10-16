@@ -4,8 +4,24 @@ from psycopg2.extras import Json, RealDictCursor
 
 from .config import DATABASE_URL
 
-CREATE_TABLE = """
-CREATE TABLE IF NOT EXISTS analyses (
+# Uploads lived in a table called `analyses` before; carry an existing one
+# over, data, id sequence and all, before the CREATE below would make an empty
+# `uploads` beside it.
+RENAME_ANALYSES = """
+DO $$
+BEGIN
+    IF to_regclass('public.analyses') IS NOT NULL
+       AND to_regclass('public.uploads') IS NULL THEN
+        ALTER TABLE analyses RENAME TO uploads;
+        ALTER SEQUENCE IF EXISTS analyses_id_seq RENAME TO uploads_id_seq;
+        ALTER INDEX IF EXISTS analyses_pkey RENAME TO uploads_pkey;
+    END IF;
+END
+$$
+"""
+
+CREATE_UPLOADS_TABLE = """
+CREATE TABLE IF NOT EXISTS uploads (
     id                SERIAL PRIMARY KEY,
     filename          TEXT NOT NULL,
     storage_path      TEXT,
@@ -36,6 +52,19 @@ CREATE TABLE IF NOT EXISTS live_sessions (
 )
 """
 
+# One row per screenshot that had a face to score. The image itself is not
+# kept, the same as live-session frames.
+CREATE_SCREENSHOTS_TABLE = """
+CREATE TABLE IF NOT EXISTS screenshots (
+    id                SERIAL PRIMARY KEY,
+    fake_probability  DOUBLE PRECISION NOT NULL,
+    status            TEXT NOT NULL,
+    user_feedback     TEXT,
+    user_id           TEXT,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+)
+"""
+
 CREATE_USERS_TABLE = """
 CREATE TABLE IF NOT EXISTS users (
     id             SERIAL PRIMARY KEY,
@@ -46,11 +75,11 @@ CREATE TABLE IF NOT EXISTS users (
 """
 
 OLD_COLUMNS = [
-    "ALTER TABLE analyses ADD COLUMN IF NOT EXISTS storage_path TEXT",
-    "ALTER TABLE analyses ADD COLUMN IF NOT EXISTS user_feedback TEXT",
+    "ALTER TABLE uploads ADD COLUMN IF NOT EXISTS storage_path TEXT",
+    "ALTER TABLE uploads ADD COLUMN IF NOT EXISTS user_feedback TEXT",
     # Rows from before sign-in existed keep a NULL owner and are visible to
     # no signed-in user.
-    "ALTER TABLE analyses ADD COLUMN IF NOT EXISTS user_id TEXT",
+    "ALTER TABLE uploads ADD COLUMN IF NOT EXISTS user_id TEXT",
     "ALTER TABLE live_sessions ADD COLUMN IF NOT EXISTS user_id TEXT",
 ]
 
@@ -139,8 +168,10 @@ def to_json(value):
 
 
 def init_schema():
-    execute(CREATE_TABLE)
+    execute(RENAME_ANALYSES)
+    execute(CREATE_UPLOADS_TABLE)
     execute(CREATE_LIVE_TABLE)
+    execute(CREATE_SCREENSHOTS_TABLE)
     execute(CREATE_USERS_TABLE)
     for query in OLD_COLUMNS:
         execute(query)

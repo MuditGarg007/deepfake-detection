@@ -23,6 +23,10 @@ INSERT INTO live_sessions (
 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
 RETURNING *
 """
+INSERT_SCREENSHOT = """
+INSERT INTO screenshots (fake_probability, status, user_id)
+VALUES (%s, %s, %s)
+"""
 SELECT_SESSION = "SELECT * FROM live_sessions WHERE id = %s AND user_id IS NOT DISTINCT FROM %s"
 
 
@@ -85,6 +89,18 @@ async def score_live_frame(request: Request):
         fake_probability=score.fake_probability,
         status=video_processor.risk_status(score.fake_probability),
     )
+
+
+@router.post("/screenshot", response_model=LiveFrameOut)
+async def score_screenshot(request: Request):
+    verdict = await score_live_frame(request)
+    if verdict.face_found:
+        await run_in_threadpool(
+            database.execute,
+            INSERT_SCREENSHOT,
+            (verdict.fake_probability, verdict.status, current_user(request)),
+        )
+    return verdict
 
 
 @router.post("/start", response_model=LiveStartOut, status_code=201)

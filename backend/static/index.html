@@ -16,15 +16,17 @@
     </div>
   </div>
 
+  <p class="intro">
+    DeepGuard checks the faces in a video, a screenshot or a live screen share and tells you how
+    likely it is that they were made or changed by a deepfake tool. You can upload a video, take a
+    screenshot of any app, or share your screen and get a verdict as you watch.
+  </p>
+
   <p id="page-message">Loading...</p>
 
-  <div id="auth" hidden>
+  <div id="auth" class="box" hidden>
     <div id="sign-in-box">
       <h2>Sign in</h2>
-      <div class="buttons">
-        <button class="oauth-button" data-strategy="oauth_google">Continue with Google</button>
-        <button class="oauth-button" data-strategy="oauth_github">Continue with GitHub</button>
-      </div>
       <form id="sign-in-form">
         <div class="field">
           <label for="sign-in-email">Email</label>
@@ -44,9 +46,12 @@
       <div class="row">
         No account yet? <button id="show-sign-up">Create one</button>
       </div>
+      <div class="row">
+        <button id="show-admin">Admin login</button>
+      </div>
     </div>
 
-    <div id="admin-box">
+    <div id="admin-box" hidden>
       <h2>Admin login</h2>
       <form id="admin-form">
         <div class="field">
@@ -68,10 +73,6 @@
 
     <div id="sign-up-box" hidden>
       <h2>Create an account</h2>
-      <div class="buttons">
-        <button class="oauth-button" data-strategy="oauth_google">Continue with Google</button>
-        <button class="oauth-button" data-strategy="oauth_github">Continue with GitHub</button>
-      </div>
       <form id="sign-up-form">
         <div class="field">
           <label for="sign-up-email">Email</label>
@@ -131,12 +132,25 @@
   <div id="app" hidden>
     <section>
       <h2>Screenshot an app</h2>
-      <p>Pick a window or screen. One frame is captured and checked.</p>
+      <p>Pick a window or screen. One frame is captured, then you can drag over the part you want
+        checked.</p>
       <div class="buttons">
         <button id="screenshot-button">Take screenshot</button>
       </div>
+      <div id="crop" hidden>
+        <p>Drag a box around the face you want checked, or check the whole screenshot.</p>
+        <div id="crop-stage" class="crop-stage">
+          <canvas id="crop-canvas"></canvas>
+          <div id="crop-box" class="crop-box" hidden></div>
+        </div>
+        <div class="buttons">
+          <button id="crop-check" disabled>Check selection</button>
+          <button id="crop-whole">Check whole screenshot</button>
+          <button id="crop-cancel">Cancel</button>
+        </div>
+      </div>
       <p id="screenshot-message"></p>
-      <div class="row">Verdict: <span id="screenshot-status">-</span></div>
+      <div class="row">Verdict: <span id="screenshot-status" class="verdict">-</span></div>
       <div class="row">Fake probability: <span id="screenshot-probability">-</span></div>
       <div class="media">
         <img id="screenshot-image" alt="Screenshot" width="480" hidden>
@@ -145,12 +159,14 @@
 
     <section>
       <h2>Live screen share</h2>
+      <p>Share a window or your whole screen while a call or video plays. We check two frames every
+        second and keep a running verdict that updates as you watch.</p>
       <div class="buttons">
         <button id="live-start">Start sharing</button>
         <button id="live-stop" disabled>Stop sharing</button>
       </div>
       <p id="live-message"></p>
-      <div class="row">Verdict: <span id="live-status">-</span></div>
+      <div class="row">Verdict: <span id="live-status" class="verdict">-</span></div>
       <div class="row">Fake probability: <span id="live-probability">-</span></div>
       <div class="row">Frames with a face: <span id="live-frames">0</span></div>
       <div class="media">
@@ -160,7 +176,7 @@
 
     <section id="live-result" hidden>
       <h2>Live session result</h2>
-      <div class="row">Verdict: <span id="live-result-status"></span></div>
+      <div class="row">Verdict: <span id="live-result-status" class="verdict"></span></div>
       <div class="row">Average fake probability: <span id="live-result-mean"></span></div>
       <div class="row">Highest fake probability: <span id="live-result-peak"></span></div>
       <div class="row">Duration: <span id="live-result-duration"></span></div>
@@ -170,6 +186,7 @@
 
     <section>
       <h2>Upload a video</h2>
+      <p>Pick a clip with a clear view of someone's face. Shorter clips come back faster.</p>
       <div class="field">
         <label for="file-input">Video file (.mp4, .avi, .mov)</label>
         <input type="file" id="file-input" accept=".mp4,.avi,.mov">
@@ -183,7 +200,7 @@
     <section id="result" hidden>
       <h2>Video result</h2>
       <div class="row">File: <span id="result-file"></span></div>
-      <div class="row">Verdict: <span id="result-status"></span></div>
+      <div class="row">Verdict: <span id="result-status" class="verdict"></span></div>
       <div class="row">Fake probability: <span id="result-probability"></span></div>
       <div class="row">Most suspicious part: <span id="result-range"></span></div>
       <div class="row">Checked on: <span id="result-date"></span></div>
@@ -206,6 +223,7 @@
 
     <section>
       <h2>History</h2>
+      <p>Everything you have checked, newest first. Click one to open it again.</p>
       <div class="buttons">
         <button id="history-refresh">Refresh</button>
       </div>
@@ -213,5 +231,37 @@
       <ul id="history-list"></ul>
     </section>
   </div>
+
+  <section>
+    <h2>How it works</h2>
+    <ol>
+      <li>We take a set of frames spread across the whole video.</li>
+      <li>A face detector (MTCNN) finds each face and crops it out.</li>
+      <li>A model (EfficientNet-B0) trained on real and fake clips from the FaceForensics++ dataset gives each face a fake probability.</li>
+      <li>The frame scores become one verdict, and we point out the part of the video that looked the most suspicious.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>What the verdicts mean</h2>
+    <ul>
+      <li><span class="verdict" data-status="REAL">Real</span>: average fake probability under 40%.</li>
+      <li><span class="verdict" data-status="SUSPICIOUS">Suspicious</span>: between 40% and 70%. Worth a closer look.</li>
+      <li><span class="verdict" data-status="HIGH_RISK">High risk</span>: over 70%.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Good to know</h2>
+    <ul>
+      <li>This is a second opinion, not proof.</li>
+      <li>It only looks at faces. If no face is found, there is nothing to score.</li>
+      <li>The model learned from one family of face swap methods, so newer tools, heavy compression or bad lighting can fool it.</li>
+      <li>Your history is tied to your account. Other users cannot see it.</li>
+      <li>If we got it wrong, use the feedback buttons on a result.</li>
+    </ul>
+  </section>
+
+  <p class="footer">DeepGuard. Built with FastAPI, PyTorch and PostgreSQL.</p>
 </body>
 </html>
