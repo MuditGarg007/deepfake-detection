@@ -39,3 +39,6 @@ frontend/.env.local
 
 # Deployment secrets
 deploy/.env
+
+# Local agent tooling
+.commandcode/
