@@ -24,7 +24,9 @@
 
   <p id="page-message">Loading...</p>
 
-  <div id="auth" class="box" hidden>
+  <!-- Signed-out page: sign-in card on the left, what DeepGuard is on the right. -->
+  <div id="auth-page" class="auth-page" hidden>
+  <div id="auth" class="box">
     <div id="sign-in-box">
       <h2>Sign in</h2>
       <form id="sign-in-form">
@@ -114,6 +116,36 @@
     </div>
 
     <p id="auth-message"></p>
+  </div>
+
+  <div class="auth-info">
+    <h1>DeepGuard</h1>
+    <p class="intro">
+      Checks the faces in a video, a screenshot or a live screen share and tells you how likely
+      they were made or changed by a deepfake tool.
+    </p>
+
+    <h2>How it works</h2>
+    <ol>
+      <li>We sample frames across the video and crop each face (MTCNN).</li>
+      <li>A model (EfficientNet-B0, trained on FaceForensics++) scores each face.</li>
+      <li>The scores become one verdict, with the most suspicious part marked.</li>
+    </ol>
+
+    <h2>What the verdicts mean</h2>
+    <ul>
+      <li><span class="verdict" data-status="REAL">Real</span>: under 40% fake probability.</li>
+      <li><span class="verdict" data-status="SUSPICIOUS">Suspicious</span>: 40% to 70%.</li>
+      <li><span class="verdict" data-status="HIGH_RISK">High risk</span>: over 70%.</li>
+    </ul>
+
+    <h2>Good to know</h2>
+    <ul>
+      <li>A second opinion, not proof. It only looks at faces.</li>
+      <li>Newer tools, heavy compression or bad lighting can fool it.</li>
+      <li>Your history is private to your account.</li>
+    </ul>
+  </div>
   </div>
 
   <div id="admin-view" hidden>
@@ -232,6 +264,7 @@
     </section>
   </div>
 
+  <div id="about">
   <section>
     <h2>How it works</h2>
     <ol>
@@ -263,5 +296,6 @@
   </section>
 
   <p class="footer">DeepGuard. Built with FastAPI, PyTorch and PostgreSQL.</p>
+  </div>
 </body>
 </html>

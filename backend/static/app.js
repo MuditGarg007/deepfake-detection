@@ -220,7 +220,9 @@ function clerkError(error) {
 
 function showSignedOut() {
   setText("page-message", "");
-  byId("auth").hidden = false;
+  // The signed-out layout hides the header and long info sections (see app.css).
+  document.body.classList.add("signed-out");
+  byId("auth-page").hidden = false;
   showBox("sign-in-box");
 
   if (window.location.search.includes("second-factor")) {
